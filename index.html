@@ -10,7 +10,7 @@ let currentTeam='all', selectedId=null;
 const teamMeta={all:'All Players',U17:'U17 Boys • Jon Barber • N1',U16:'U16 Boys • Wayne Smith • ECNL RL NTX',outside:'Outside Range'};
 const $=s=>document.querySelector(s);
 function esc(v){return String(v??'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-function fmt(d){if(!d) return '—'; const x=new Date(d); return isNaN(x)?d:x.toLocaleDateString();}
+function fmt(d){if(!d) return '—'; const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(d); const x=m?new Date(+m[1],+m[2]-1,+m[3]):new Date(d); return isNaN(x)?d:x.toLocaleDateString();}
 function bucket(d){if(!d) return 'Outside Range'; if(d>='2009-08-01'&&d<='2010-07-31') return 'U17'; if(d>='2010-08-01'&&d<='2011-07-31') return 'U16'; return 'Outside Range';}
 function full(p){return (p.firstName+' '+p.lastName).trim();}
 function tabs(){$('#tabs').innerHTML=['all','U17','U16','outside'].map(k=>`<button class="tab ${currentTeam===k?'active':''}" data-t="${k}">${teamMeta[k]}</button>`).join(''); document.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{currentTeam=b.dataset.t; render();})}
