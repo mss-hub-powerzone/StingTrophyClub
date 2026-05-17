@@ -1,0 +1,20 @@
+# Cloudflare Pages configuration for the Sting Trophy Club dashboard.
+#
+# The site itself is the static contents of the repo root (index.html and
+# assets/). Pages Functions live under ./functions and provide the /api/players
+# endpoints backed by D1.
+#
+# Replace the placeholders in [[d1_databases]] with the values you get from
+# `wrangler d1 create stingtrophyclub`, then run the migrations under
+# ./migrations. See README.md for the step-by-step.
+
+name = "stingtrophyclub"
+compatibility_date = "2024-12-01"
+pages_build_output_dir = "."
+
+# D1 binding consumed by functions/api/_shared.js as env.DB
+[[d1_databases]]
+binding = "DB"
+database_name = "stingtrophyclub"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "migrations"
