@@ -16,5 +16,5 @@ pages_build_output_dir = "."
 [[d1_databases]]
 binding = "DB"
 database_name = "stingtrophyclub"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "47a4f214-ec53-4ea9-9abc-fb892f6c4a29"
 migrations_dir = "migrations"
