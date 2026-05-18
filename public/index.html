@@ -6,6 +6,7 @@
 </style></head><body><div class="app"><div class="top"><div><div class="brand"><img src="./assets/Sting-Logo.jpg" alt="Sting logo" width="54" height="54"><div><h1>Soccer Team Tracker</h1><div class="muted">U17 Boys — Jon Barber • N1 &nbsp; | &nbsp; U16 Boys — Wayne Smith • ECNL RL NTX</div><div class="chips"><div class="chip"><img src="./assets/N1-league-logo.jpg" alt="N1 league logo"><span>U17 • N1</span></div><div class="chip"><img src="./assets/ECNL-RL-boys.jpg" alt="ECNL RL logo"><span>U16 • ECNL RL NTX</span></div></div></div></div></div><div class="actions"><button class="btn" id="theme">Light mode</button><button class="btn" id="export">Export CSV</button><button class="btn" id="adminBtn" title="Set admin token for edits">Admin</button><button class="btn primary" id="addBtn">Add player</button></div></div><div id="stcStatus" class="muted" style="margin-bottom:10px;font-size:13px"></div><div class="layout"><aside class="panel"><div class="label">Controls</div><div class="stack"><div><div class="label">Search</div><input id="search" class="input" placeholder="Name, club, school, contact"></div><div><div class="label">Status</div><select id="status" class="select"><option value="all">All statuses</option><option>Committed</option><option>Offer Sent</option><option>Prospect</option><option>Evaluating</option><option>Declined</option><option>Waitlist</option></select></div><div><div class="label">Position</div><select id="position" class="select"><option value="all">All positions</option><option>Defense</option><option>Midfield</option><option>Forward / Wing</option><option>Keeper</option><option>GK</option></select></div><div><div class="label">Player type</div><select id="ptype" class="select"><option value="all">All</option><option value="roster">Current roster/imported</option><option value="prospect">Potential new player</option></select></div><div><div class="label">Quick view</div><select id="quick" class="select"><option value="all">All players</option><option value="followup">Follow-up needed</option><option value="offer">Offer sent</option><option value="committed">Committed</option></select></div></div><div style="margin-top:20px" class="small">CSV players imported: 22 player rows after excluding staff entries; tryout prospects added: 15. Edit status, position and notes from the player drawer, and delete players there as well.</div></aside><main><div class="tabs" id="tabs"></div><div class="summary" id="summary"></div><div class="toolbar"><input class="input" id="quickSearch" placeholder="Quick search players..." style="max-width:280px"><select class="select" id="sort" style="max-width:220px"><option value="name">Sort: Name</option><option value="birthdate">Sort: Birthdate</option><option value="status">Sort: Status</option></select></div><div class="tablewrap"><table><thead><tr><th>Player</th><th>Team</th><th>Status</th><th>Position</th><th>Birthdate</th><th>School / Club</th><th>Contact</th><th>Offer</th><th>Notes</th></tr></thead><tbody id="tbody"></tbody></table></div></main></div></div><div class="overlay" id="overlay"></div><div class="drawer" id="drawer"></div><script>
 const API_BASE = '/api/players';
 const TOKEN_KEY = 'stc_admin_token';
+const TOKEN_PERSIST_KEY = 'stc_admin_token_persist';
 let players = [];
 let currentTeam = 'all';
 let selectedId = null;
@@ -23,15 +24,81 @@ function setStatus(msg, kind) {
   el.style.color = kind === 'error' ? '#e79ac2' : kind === 'ok' ? '#8bd171' : '';
 }
 
-function getToken() { try { return sessionStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; } }
-function setToken(t) { try { if (t) sessionStorage.setItem(TOKEN_KEY, t); else sessionStorage.removeItem(TOKEN_KEY); } catch (e) {} }
-function promptToken() {
-  const current = getToken();
-  const next = window.prompt('Admin token (required to add/edit/delete players). Leave blank to clear.', current);
-  if (next === null) return getToken();
-  setToken(next.trim());
-  setStatus(next.trim() ? 'Admin token set for this session.' : 'Admin token cleared.', 'ok');
-  return getToken();
+function getToken() {
+  try {
+    return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY) || '';
+  } catch (e) { return ''; }
+}
+function tokenIsPersisted() {
+  try { return !!localStorage.getItem(TOKEN_KEY); } catch (e) { return false; }
+}
+function clearToken() {
+  try { sessionStorage.removeItem(TOKEN_KEY); } catch (e) {}
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(TOKEN_PERSIST_KEY);
+  } catch (e) {}
+}
+function setToken(t, persist) {
+  clearToken();
+  if (!t) return;
+  try {
+    if (persist) {
+      localStorage.setItem(TOKEN_KEY, t);
+      localStorage.setItem(TOKEN_PERSIST_KEY, '1');
+    } else {
+      sessionStorage.setItem(TOKEN_KEY, t);
+    }
+  } catch (e) {}
+}
+
+function showTokenDialog() {
+  return new Promise(resolve => {
+    const hasToken = !!getToken();
+    const persisted = tokenIsPersisted();
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5)';
+    wrap.innerHTML = `<div role="dialog" aria-modal="true" style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:16px;padding:20px;width:min(420px,92%);box-shadow:0 10px 40px rgba(0,0,0,.5)">
+      <div class="label">Admin token</div>
+      <h3 style="margin:4px 0 12px">Sign in to edit players</h3>
+      <div class="small" style="margin-bottom:10px">${hasToken ? 'A token is currently saved' + (persisted ? ' on this device.' : ' for this session.') : 'Required for add, edit, and delete actions.'}</div>
+      <input id="tkInput" class="input" type="password" autocomplete="off" placeholder="Paste admin token" style="margin-bottom:10px">
+      <label style="display:flex;gap:8px;align-items:center;margin-bottom:14px;cursor:pointer">
+        <input id="tkRemember" type="checkbox" ${persisted ? 'checked' : ''}>
+        <span class="small">Remember this device (otherwise this session only)</span>
+      </label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+        ${hasToken ? '<button class="btn" id="tkForget" style="color:#e79ac2;border-color:#7a415f">Forget saved token</button>' : ''}
+        <button class="btn" id="tkCancel">Cancel</button>
+        <button class="btn primary" id="tkSave">Save</button>
+      </div>
+    </div>`;
+    document.body.appendChild(wrap);
+    const input = wrap.querySelector('#tkInput');
+    const remember = wrap.querySelector('#tkRemember');
+    const close = result => { document.body.removeChild(wrap); resolve(result); };
+    input.focus();
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') wrap.querySelector('#tkSave').click(); });
+    wrap.querySelector('#tkCancel').onclick = () => close(getToken());
+    wrap.querySelector('#tkSave').onclick = () => {
+      const v = input.value.trim();
+      if (!v) { close(getToken()); return; }
+      setToken(v, !!remember.checked);
+      setStatus(remember.checked ? 'Admin token saved on this device.' : 'Admin token set for this session.', 'ok');
+      close(getToken());
+    };
+    const forget = wrap.querySelector('#tkForget');
+    if (forget) forget.onclick = () => {
+      clearToken();
+      setStatus('Admin token cleared.', 'ok');
+      close('');
+    };
+    wrap.addEventListener('click', e => { if (e.target === wrap) close(getToken()); });
+  });
+}
+
+async function promptToken() {
+  return await showTokenDialog();
 }
 
 async function apiFetch(path, options = {}) {
@@ -43,13 +110,13 @@ async function apiFetch(path, options = {}) {
   const method = (opts.method || 'GET').toUpperCase();
   if (method !== 'GET' && method !== 'HEAD') {
     let token = getToken();
-    if (!token) token = promptToken();
+    if (!token) token = await promptToken();
     if (token) opts.headers['authorization'] = 'Bearer ' + token;
   }
   const res = await fetch(path, opts);
   if (res.status === 401) {
     setStatus('Unauthorized — admin token missing or wrong.', 'error');
-    setToken('');
+    clearToken();
     throw new Error('Unauthorized');
   }
   if (!res.ok) {
@@ -205,7 +272,7 @@ function toggleTheme() { const cur = document.documentElement.getAttribute('data
 $('#theme').onclick = toggleTheme;
 $('#addBtn').onclick = addPlayer;
 $('#export').onclick = exportCsv;
-$('#adminBtn').onclick = () => promptToken();
+$('#adminBtn').onclick = () => { promptToken(); };
 ['search', 'quickSearch'].forEach(id => $('#' + id).addEventListener('input', render));
 ['status', 'position', 'ptype', 'quick', 'sort'].forEach(id => $('#' + id).addEventListener('change', render));
 

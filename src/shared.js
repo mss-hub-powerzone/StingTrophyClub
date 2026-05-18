@@ -102,10 +102,22 @@ export function json(data, init = {}) {
   });
 }
 
+export function getAdminToken(env) {
+  if (!env) return "";
+  const candidates = [env.ADMIN_TOKEN, env.admin_token, env.Admin_Token];
+  for (const c of candidates) {
+    if (typeof c === "string" && c.length > 0) return c;
+  }
+  return "";
+}
+
 export function requireAdmin(request, env) {
-  const expected = env.ADMIN_TOKEN;
+  const expected = getAdminToken(env);
   if (!expected) {
-    return json({ error: "ADMIN_TOKEN is not configured on the server." }, { status: 503 });
+    return json(
+      { error: "Admin token is not configured in Cloudflare environment variables/secrets." },
+      { status: 503 }
+    );
   }
   const header = request.headers.get("authorization") || "";
   const bearer = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
