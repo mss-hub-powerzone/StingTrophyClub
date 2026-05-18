@@ -1,4 +1,4 @@
-// Shared helpers for the /api/players Pages Functions.
+// Shared helpers for the /api/players Worker routes.
 //
 // The dashboard speaks camelCase (firstName, teamBucket, ...); D1 stores
 // snake_case columns. Translate at the API boundary so neither side has to
@@ -54,9 +54,6 @@ function deriveTeamFields(birthdate) {
   return { team_bucket: bucket, team_label: label, coach, league };
 }
 
-// Map an incoming player payload (camelCase, partial allowed) into a
-// snake_case object suitable for INSERT/UPDATE. Empty strings are preserved
-// because the UI distinguishes between "" and absent (legacy behavior).
 export function playerToColumns(body, { fillDefaults = false } = {}) {
   const out = {};
   for (const [col, key] of COLUMNS) {
@@ -71,9 +68,6 @@ export function playerToColumns(body, { fillDefaults = false } = {}) {
     }
   }
 
-  // If birthdate is being set/changed but team fields aren't explicitly
-  // provided, recompute them so the dashboard stays consistent with the
-  // existing client-side logic.
   const birthdateProvided = "birthdate" in body;
   const teamProvided = "teamBucket" in body || "teamLabel" in body || "coach" in body || "league" in body;
   if (birthdateProvided && !teamProvided) {
