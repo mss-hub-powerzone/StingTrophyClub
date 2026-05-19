@@ -4,6 +4,7 @@
 // static assets binding (public/ in the repo).
 
 import { COLUMNS, json, makeId, playerToColumns, requireAdmin, rowToPlayer } from "./shared.js";
+import { handleSyncRequest } from "./sync.js";
 
 async function listPlayers(env) {
   if (!env.DB) return json({ error: "DB binding missing" }, { status: 500 });
@@ -104,6 +105,14 @@ async function deletePlayer(request, env, id) {
 async function handleApi(request, env, url) {
   const path = url.pathname;
   const method = request.method.toUpperCase();
+
+  if (path === "/api/sync/google-sheet" || path === "/api/sync/google-sheet/") {
+    if (method === "POST") return handleSyncRequest(request, env);
+    if (method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: { allow: "POST, OPTIONS" } });
+    }
+    return json({ error: "Method not allowed" }, { status: 405, headers: { allow: "POST, OPTIONS" } });
+  }
 
   if (path === "/api/players" || path === "/api/players/") {
     if (method === "GET") return listPlayers(env);
