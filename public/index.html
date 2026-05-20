@@ -118,6 +118,28 @@ tr.is-selected{background:rgba(103,183,201,.08)}
   .actions .btn{font-size:13px;padding:9px 10px}
 }
 
+/* Offer email modal */
+.modal-wrap{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55);padding:16px}
+.modal{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:18px;padding:18px;width:min(720px,100%);max-height:90vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.5)}
+.modal h3{margin:0 0 4px}
+.modal .modal-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
+.modal .modal-list{overflow:auto;border:1px solid var(--border);border-radius:14px;padding:6px;background:var(--surface2)}
+.offer-row{padding:12px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:8px}
+.offer-row:last-child{border-bottom:none}
+.offer-row .head{display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap}
+.offer-row .name{font-weight:700}
+.offer-row .meta{font-size:12px;color:var(--muted)}
+.offer-row .recipients{font-size:13px;word-break:break-word}
+.offer-row .actions-row{display:flex;gap:8px;flex-wrap:wrap}
+.offer-row .actions-row .btn{padding:8px 12px;font-size:13px}
+.offer-row .warn{color:#e79ac2;font-size:13px}
+.offer-row .tag{display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(103,183,201,.18);color:#9adbe8;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.offer-row .tag.unknown{background:rgba(214,145,50,.18);color:#f0b860}
+.modal .modal-foot{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:12px;align-items:center}
+.modal .modal-foot .small{flex:1;min-width:200px}
+html[data-theme="light"] .modal{background:#fff}
+html[data-theme="light"] .modal .modal-list{background:#f1ece1}
+
 html[data-theme="light"]{--bg:#f7f3ea;--surface:#ffffff;--surface2:#f1ece1;--border:#d8d2c6;--text:#1a1916;--muted:#6b665c}
 html[data-theme="light"] body{background:radial-gradient(circle at top,#fbf7ee,#ede7d8 45%)}
 html[data-theme="light"] .panel,
@@ -219,6 +241,7 @@ html[data-theme="light"] .overlay{background:rgba(0,0,0,.25)}
         <button class="btn" id="clearSelection" type="button">Clear</button>
         <button class="btn primary" id="emailSelected" type="button">Email selected (BCC)</button>
         <button class="btn" id="copyEmails" type="button">Copy emails</button>
+        <button class="btn" id="offerEmail" type="button" title="Draft individual offer emails in Outlook">Offer email</button>
       </div>
 
       <div class="tablewrap">
@@ -599,6 +622,295 @@ async function copyEmails() {
   }
 }
 
+// ============================================================
+// Offer email drafts (Outlook web)
+// ------------------------------------------------------------
+// Centralized per-team templates. Edit subject/body wording here
+// when the final language is finalized — placeholders use
+// {{variable}} syntax and are listed in TEMPLATE_VARIABLES below.
+//
+// Supported template variables:
+//   {{playerFirstName}}   - Player's first name
+//   {{playerFullName}}    - Player's full name (first + last)
+//   {{teamLabel}}         - e.g. "U17 Boys"
+//   {{teamBucket}}        - "U17" or "U16"
+//   {{league}}            - e.g. "N1" or "ECNL RL NTX"
+//   {{coach}}             - Head coach name
+//   {{guardianNames}}     - Comma-joined parent/guardian names, or "Parent/Guardian"
+//   {{guardianGreeting}}  - e.g. "Hello Jane Smith" or "Hello Parent/Guardian"
+//   {{currentDate}}       - Today's date, locale formatted
+//
+// NOTE: PDF attachment cannot be auto-attached via the Outlook
+// web compose deeplink — the user must attach the offer letter
+// PDF manually in Outlook before sending. The body includes a
+// reminder line for this. A future enhancement could upload the
+// PDF to OneDrive and include a share link.
+// ============================================================
+const OFFER_TEMPLATES = {
+  U17: {
+    subject: 'Sting Trophy Club — U17 Roster Offer for {{playerFullName}}',
+    // TODO: Replace this body with the final approved U17 wording.
+    body: [
+      '{{guardianGreeting}},',
+      '',
+      'On behalf of Sting Trophy Club, I am pleased to offer {{playerFullName}} a place on our {{teamLabel}} squad ({{league}}) for the upcoming season, coached by {{coach}}.',
+      '',
+      'Please find the formal offer letter attached, which outlines the next steps, fees, and important dates. Once you have had a chance to review it, please reply to confirm acceptance.',
+      '',
+      'We are excited about the season ahead and look forward to having {{playerFirstName}} on the team.',
+      '',
+      'Best regards,',
+      '{{coach}}',
+      'Sting Trophy Club — {{teamLabel}}',
+      '',
+      '— Reminder: please attach the U17 PDF offer letter before sending. —',
+    ].join('\n'),
+  },
+  U16: {
+    subject: 'Sting Trophy Club — U16 Roster Offer for {{playerFullName}}',
+    // TODO: Replace this body with the final approved U16 wording.
+    body: [
+      '{{guardianGreeting}},',
+      '',
+      'On behalf of Sting Trophy Club, I am pleased to offer {{playerFullName}} a place on our {{teamLabel}} squad ({{league}}) for the upcoming season, coached by {{coach}}.',
+      '',
+      'Please find the formal offer letter attached, which outlines the next steps, fees, and important dates. Once you have had a chance to review it, please reply to confirm acceptance.',
+      '',
+      'We are excited about the season ahead and look forward to having {{playerFirstName}} on the team.',
+      '',
+      'Best regards,',
+      '{{coach}}',
+      'Sting Trophy Club — {{teamLabel}}',
+      '',
+      '— Reminder: please attach the U16 PDF offer letter before sending. —',
+    ].join('\n'),
+  },
+};
+
+const TEMPLATE_VARIABLES = [
+  'playerFirstName', 'playerFullName', 'teamLabel', 'teamBucket',
+  'league', 'coach', 'guardianNames', 'guardianGreeting', 'currentDate',
+];
+
+function resolveTeamKey(p) {
+  // Prefer explicit teamBucket; fall back to deriving from birthdate via bucket(),
+  // then teamLabel/league as last-resort hints.
+  const bk = (p.teamBucket || '').toUpperCase();
+  if (bk === 'U17' || bk === 'U16') return bk;
+  const derived = bucket(p.birthdate);
+  if (derived === 'U17' || derived === 'U16') return derived;
+  const label = (p.teamLabel || '').toUpperCase();
+  if (label.includes('U17')) return 'U17';
+  if (label.includes('U16')) return 'U16';
+  const lg = (p.league || '').toUpperCase();
+  if (lg === 'N1') return 'U17';
+  if (lg.includes('ECNL RL')) return 'U16';
+  return null;
+}
+
+function guardianList(p) {
+  return [p.contact1Name, p.contact2Name]
+    .map(v => (v == null ? '' : String(v).trim()))
+    .filter(Boolean);
+}
+
+function recipientEmails(p) {
+  // Prefer parent/guardian addresses, then player's own address. Dedupe by lower-case.
+  const seen = new Set();
+  const out = [];
+  for (const f of ['contact1Email', 'contact2Email', 'email']) {
+    const e = (p && p[f] ? String(p[f]) : '').trim();
+    if (!e) continue;
+    if (!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(e)) continue;
+    const key = e.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(e);
+  }
+  return out;
+}
+
+function buildTemplateContext(p) {
+  const guardians = guardianList(p);
+  const guardianNames = guardians.length ? guardians.join(', ') : 'Parent/Guardian';
+  const guardianGreeting = 'Hello ' + guardianNames;
+  return {
+    playerFirstName: (p.firstName || '').trim() || (full(p) || 'Player'),
+    playerFullName: full(p) || 'Player',
+    teamLabel: p.teamLabel || (p.teamBucket ? p.teamBucket + ' Boys' : ''),
+    teamBucket: p.teamBucket || '',
+    league: p.league || '',
+    coach: p.coach || '',
+    guardianNames,
+    guardianGreeting,
+    currentDate: new Date().toLocaleDateString(),
+  };
+}
+
+function interpolate(template, ctx) {
+  return String(template).replace(/\{\{\s*([a-zA-Z][a-zA-Z0-9_]*)\s*\}\}/g, (_, k) => {
+    return Object.prototype.hasOwnProperty.call(ctx, k) ? String(ctx[k] ?? '') : '';
+  });
+}
+
+function buildOfferDraft(p) {
+  const teamKey = resolveTeamKey(p);
+  const tpl = teamKey ? OFFER_TEMPLATES[teamKey] : null;
+  const ctx = buildTemplateContext(p);
+  const emails = recipientEmails(p);
+  return {
+    teamKey,                  // 'U17' | 'U16' | null
+    template: tpl,            // null if no template matched
+    subject: tpl ? interpolate(tpl.subject, ctx) : '',
+    body: tpl ? interpolate(tpl.body, ctx) : '',
+    emails,
+    ctx,
+  };
+}
+
+function buildOutlookComposeUrl(draft) {
+  // Outlook web compose deeplink. Note: Outlook does not support file
+  // attachments via deeplink params, so the PDF must be attached manually.
+  const params = new URLSearchParams();
+  if (draft.emails.length) params.set('to', draft.emails.join(';'));
+  if (draft.subject) params.set('subject', draft.subject);
+  if (draft.body) params.set('body', draft.body);
+  return 'https://outlook.office.com/mail/deeplink/compose?' + params.toString();
+}
+
+async function copyToClipboard(text) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (e) {}
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch (e) { return false; }
+}
+
+function openOfferModal() {
+  const sel = selectedPlayers();
+  if (sel.length === 0) {
+    setStatus('No players selected. Tick checkboxes to select.', 'error');
+    return;
+  }
+  const drafts = sel.map(p => ({ player: p, draft: buildOfferDraft(p) }));
+
+  const wrap = document.createElement('div');
+  wrap.className = 'modal-wrap';
+  wrap.setAttribute('role', 'dialog');
+  wrap.setAttribute('aria-modal', 'true');
+
+  const close = () => { if (wrap.parentNode) wrap.parentNode.removeChild(wrap); };
+
+  const rowHtml = ({ player, draft }, idx) => {
+    const tagCls = draft.teamKey ? '' : 'unknown';
+    const tagText = draft.teamKey ? draft.teamKey + ' template' : 'No template';
+    const recipients = draft.emails.length
+      ? `<div class="recipients"><span class="small">To:</span> ${esc(draft.emails.join(', '))}</div>`
+      : `<div class="warn">No valid email on file — copy the body and send manually.</div>`;
+    const draftBtn = draft.template && draft.emails.length
+      ? `<button class="btn primary" data-act="open" data-i="${idx}">Open Outlook draft</button>`
+      : draft.template
+        ? `<button class="btn primary" data-act="open" data-i="${idx}" title="Will open Outlook with no recipient — paste an address manually">Open Outlook draft</button>`
+        : `<button class="btn" disabled title="Player has no resolvable team template">Open Outlook draft</button>`;
+    const noTemplateNote = draft.template
+      ? ''
+      : `<div class="warn">Could not determine team (U17/U16) for this player. Set teamBucket/birthdate, then retry.</div>`;
+    return `<div class="offer-row" data-i="${idx}">
+      <div class="head">
+        <div>
+          <div class="name">${esc(full(player))}</div>
+          <div class="meta">${esc(player.teamLabel || player.teamBucket || '—')} • ${esc(player.league || '')} • ${esc(player.coach || '')}</div>
+        </div>
+        <span class="tag ${tagCls}">${esc(tagText)}</span>
+      </div>
+      ${recipients}
+      ${noTemplateNote}
+      <div class="actions-row">
+        ${draftBtn}
+        <button class="btn" data-act="copyBody" data-i="${idx}" ${draft.template ? '' : 'disabled'}>Copy body</button>
+        <button class="btn" data-act="copySubject" data-i="${idx}" ${draft.template ? '' : 'disabled'}>Copy subject</button>
+        <button class="btn" data-act="copyEmails" data-i="${idx}" ${draft.emails.length ? '' : 'disabled'}>Copy email${draft.emails.length === 1 ? '' : 's'}</button>
+      </div>
+    </div>`;
+  };
+
+  const draftableCount = drafts.filter(d => d.draft.template && d.draft.emails.length).length;
+  const missingTemplateCount = drafts.filter(d => !d.draft.template).length;
+  const missingEmailCount = drafts.filter(d => d.draft.template && d.draft.emails.length === 0).length;
+
+  wrap.innerHTML = `
+    <div class="modal">
+      <div class="modal-head">
+        <div>
+          <div class="label">Offer email drafts</div>
+          <h3>Draft individual offer emails</h3>
+          <div class="small">Each player gets their own Outlook draft so you can review before sending. Attach the PDF offer letter manually before sending.</div>
+        </div>
+        <button class="btn" id="offerClose">Close</button>
+      </div>
+      <div class="modal-list">${drafts.map(rowHtml).join('')}</div>
+      <div class="modal-foot">
+        <div class="small">
+          ${drafts.length} player${drafts.length === 1 ? '' : 's'} selected.
+          ${draftableCount} ready, ${missingEmailCount} missing email, ${missingTemplateCount} missing team template.
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn" id="offerOpenAll" ${draftableCount ? '' : 'disabled'} title="Opens one Outlook tab per ready draft">Open all (${draftableCount})</button>
+        </div>
+      </div>
+    </div>`;
+
+  document.body.appendChild(wrap);
+  wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
+  wrap.querySelector('#offerClose').onclick = close;
+
+  wrap.querySelector('#offerOpenAll').onclick = () => {
+    const ready = drafts.filter(d => d.draft.template && d.draft.emails.length);
+    if (!ready.length) return;
+    if (ready.length > 5 && !confirm('Open ' + ready.length + ' new Outlook tabs?')) return;
+    for (const { draft } of ready) {
+      window.open(buildOutlookComposeUrl(draft), '_blank', 'noopener');
+    }
+    setStatus('Opened ' + ready.length + ' Outlook draft' + (ready.length === 1 ? '' : 's') + '.', 'ok');
+  };
+
+  wrap.querySelectorAll('[data-act]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const i = +btn.dataset.i;
+      const item = drafts[i];
+      if (!item) return;
+      const { draft } = item;
+      if (btn.dataset.act === 'open') {
+        if (!draft.template) return;
+        window.open(buildOutlookComposeUrl(draft), '_blank', 'noopener');
+        return;
+      }
+      if (btn.dataset.act === 'copyBody') {
+        const ok = await copyToClipboard(draft.body);
+        setStatus(ok ? 'Body copied.' : 'Copy failed.', ok ? 'ok' : 'error');
+      } else if (btn.dataset.act === 'copySubject') {
+        const ok = await copyToClipboard(draft.subject);
+        setStatus(ok ? 'Subject copied.' : 'Copy failed.', ok ? 'ok' : 'error');
+      } else if (btn.dataset.act === 'copyEmails') {
+        const ok = await copyToClipboard(draft.emails.join(', '));
+        setStatus(ok ? 'Email addresses copied.' : 'Copy failed.', ok ? 'ok' : 'error');
+      }
+    });
+  });
+}
+
 function selectVisible() {
   const rows = filtered();
   for (const p of rows) selectedIds.add(p.id);
@@ -732,6 +1044,7 @@ $('#selectVisible').onclick = selectVisible;
 $('#clearSelection').onclick = clearSelection;
 $('#emailSelected').onclick = emailSelected;
 $('#copyEmails').onclick = copyEmails;
+$('#offerEmail').onclick = openOfferModal;
 $('#selectAllVisibleHeader').addEventListener('change', e => {
   if (e.target.checked) selectVisible();
   else clearSelection();
@@ -782,7 +1095,13 @@ async function syncGoogleForm() {
 ['status', 'position', 'ptype', 'quick', 'sort'].forEach(id => $('#' + id).addEventListener('change', render));
 
 // Expose select utilities for test/inspection (no-op for users)
-window.__stc = { extractEmails, buildMailto, selectedIds, selectVisible, clearSelection };
+window.__stc = {
+  extractEmails, buildMailto, selectedIds, selectVisible, clearSelection,
+  // Offer email helpers (exposed for inspection/testing)
+  OFFER_TEMPLATES, TEMPLATE_VARIABLES, resolveTeamKey, recipientEmails,
+  buildTemplateContext, interpolate, buildOfferDraft, buildOutlookComposeUrl,
+  openOfferModal,
+};
 
 loadPlayers();
 </script>
