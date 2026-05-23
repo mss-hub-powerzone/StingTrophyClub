@@ -648,20 +648,36 @@ async function copyEmails() {
 // ============================================================
 const OFFER_TEMPLATES = {
   U17: {
-    subject: 'Sting Trophy Club — U17 Roster Offer for {{playerFullName}}',
-    // TODO: Replace this body with the final approved U17 wording.
+    subject: 'Sting Soccer U17 N1 Offer – 2026–27 Season - {{playerFullName}}',
+    // Final wording provided by Jon Barber. The only variable adaptation is
+    // [Parent/Family Name] -> {{guardianNames}} (resolves to the parent name(s)
+    // on file, or "Parent/Guardian" if none). Player name is intentionally
+    // left as "your son" per the supplied copy.
     body: [
-      '{{guardianGreeting}},',
-      '',
-      'On behalf of Sting Trophy Club, I am pleased to offer {{playerFullName}} a place on our {{teamLabel}} squad ({{league}}) for the upcoming season, coached by {{coach}}.',
-      '',
-      'Please find the formal offer letter attached, which outlines the next steps, fees, and important dates. Once you have had a chance to review it, please reply to confirm acceptance.',
-      '',
-      'We are excited about the season ahead and look forward to having {{playerFirstName}} on the team.',
-      '',
-      'Best regards,',
-      '{{coach}}',
-      'Sting Trophy Club — {{teamLabel}}',
+      'Hi {{guardianNames}},',
+      'We’re excited to share that your son has been selected for the Sting Soccer U17 Boys (N1 National League) – Trophy Club team for the 2026–27 season.',
+      'We’re building a refreshed, strong, and competitive group, and we’re excited about the direction of this team as we head into the new year. The N1 platform provides a great environment for development, competition, and continued progression within the Sting pathway.',
+      'Thank you for your support and engagement throughout the process so far—we’re looking forward to a great season ahead.',
+      'Next Steps (Time Sensitive):',
+      '• Please text, call, or email within 24 hours to confirm your son’s acceptance',
+      '• Complete registration using the link provided in the official offer packet',
+      '• Submit all required paperwork (headshot, birth certificate/passport, forms)',
+      '• Order uniforms (new 2-year cycle – all players will need to order)',
+      'Full details, including registration, dues, and program structure, are included here:',
+      'Program Snapshot:',
+      '• Team: Sting N1 BU17 Barber',
+      '• Head Coach: Jon Barber',
+      '• Location: Trophy Club (primary training base)',
+      '• Focus: Development, competition, and advancement within the Sting pathway',
+      'Club dues for the 2026–27 season are $3,700, which include league fees, coaching, training facilities, and full player development programming .',
+      'If you have any questions about the team, league structure, expectations for the season, or anything else, feel free to reach out at any time.',
+      'Jon Barber',
+      'jonbarber@stingsoccer.com',
+      '214.202.7490',
+      'We’re excited about what’s ahead and the group we’re building.',
+      'All the best,',
+      'Jon Barber',
+      'Head Coach – Sting U17 Boys (N1)',
       '',
       '— Reminder: please attach the U17 PDF offer letter before sending. —',
     ].join('\n'),
