@@ -129,6 +129,30 @@ tr.is-selected{background:rgba(103,183,201,.08)}
   .actions .btn{font-size:13px;padding:9px 10px}
 }
 
+/* Persistent sync result panel */
+.sync-result{margin:0 0 14px;padding:12px 14px;border:1px solid var(--border);border-radius:14px;background:rgba(23,23,21,.92)}
+.sync-result[hidden]{display:none}
+.sync-result.is-ok{border-color:rgba(102,166,80,.45);background:rgba(102,166,80,.10)}
+.sync-result.is-error{border-color:rgba(200,106,159,.45);background:rgba(200,106,159,.10)}
+.sync-result.is-pending{border-color:rgba(103,183,201,.45);background:rgba(103,183,201,.10)}
+.sync-result-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px}
+.sync-result-title{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.sync-result-dismiss{background:transparent;border:0;color:var(--muted);cursor:pointer;font-size:18px;line-height:1;padding:2px 6px;border-radius:6px}
+.sync-result-dismiss:hover{color:var(--text);background:rgba(255,255,255,.05)}
+.sync-result-dismiss:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.sync-result-body{font-size:14px;line-height:1.5;word-wrap:break-word}
+.sync-result-body strong{font-weight:700}
+.sync-result-body .beckett{display:inline-block;margin-top:4px;padding:2px 8px;border-radius:999px;background:rgba(103,183,201,.18);color:#9adbe8;font-size:12px;font-weight:700}
+.sync-result-body .beckett.error{background:rgba(200,106,159,.18);color:#e79ac2}
+.sync-result-debug{margin-top:8px;font-size:12px}
+.sync-result-debug summary{cursor:pointer;color:var(--muted)}
+.sync-result-debug pre{margin:6px 0 0;padding:8px;border-radius:8px;background:rgba(0,0,0,.25);max-height:240px;overflow:auto;white-space:pre-wrap;word-wrap:break-word;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:1.5}
+html[data-theme="light"] .sync-result{background:rgba(255,255,255,.92)}
+html[data-theme="light"] .sync-result.is-ok{background:rgba(102,166,80,.12)}
+html[data-theme="light"] .sync-result.is-error{background:rgba(200,106,159,.12)}
+html[data-theme="light"] .sync-result.is-pending{background:rgba(103,183,201,.12)}
+html[data-theme="light"] .sync-result-debug pre{background:rgba(0,0,0,.06)}
+
 /* Offer email modal */
 .modal-wrap{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55);padding:16px}
 .modal{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:18px;padding:18px;width:min(720px,100%);max-height:90vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.5)}
@@ -191,6 +215,24 @@ html[data-theme="light"] .overlay{background:rgba(0,0,0,.25)}
   </div>
 
   <div id="stcStatus" class="muted" style="margin-bottom:10px;font-size:13px"></div>
+
+  <!--
+    Persistent sync-result panel. Lives separately from #stcStatus so that
+    the post-sync loadPlayers() call (which writes its own brief "60 players
+    loaded" toast and then clears) cannot wipe the sync diagnostics.
+    Shown only after a sync run; cleared on user-dismiss or hard refresh.
+  -->
+  <div id="syncResult" class="sync-result" hidden>
+    <div class="sync-result-head">
+      <strong class="sync-result-title">Last sync</strong>
+      <button type="button" class="sync-result-dismiss" id="syncResultDismiss" aria-label="Dismiss sync result">×</button>
+    </div>
+    <div class="sync-result-body" id="syncResultBody"></div>
+    <details class="sync-result-debug" id="syncResultDebug" hidden>
+      <summary>Debug detail</summary>
+      <pre id="syncResultDebugBody"></pre>
+    </details>
+  </div>
 
   <div class="layout">
     <aside class="panel" id="filtersPanel">
@@ -1197,6 +1239,12 @@ $('#addBtn').onclick = addPlayer;
 $('#export').onclick = exportCsv;
 $('#adminBtn').onclick = () => { promptToken(); };
 $('#syncBtn').onclick = syncGoogleForm;
+(function initSyncResultDismiss() {
+  const btn = $('#syncResultDismiss');
+  const panel = $('#syncResult');
+  if (!btn || !panel) return;
+  btn.addEventListener('click', () => { panel.hidden = true; });
+})();
 $('#selectVisible').onclick = selectVisible;
 $('#clearSelection').onclick = clearSelection;
 $('#emailSelected').onclick = emailSelected;
@@ -1281,36 +1329,91 @@ $('#selectAllVisibleHeader').addEventListener('change', e => {
   btn.addEventListener('click', () => { collapsed = !collapsed; applyCollapsed(); });
 })();
 
+// Render the persistent sync result panel under the header buttons.
+// This is intentionally separate from setStatus()/#stcStatus so that
+// loadPlayers() running right after the sync (which itself toasts and
+// then clears #stcStatus) cannot wipe the diagnostics the operator
+// needs to see.
+function setSyncResult({ kind, html, debug }) {
+  const panel = $('#syncResult');
+  const body = $('#syncResultBody');
+  const dbgWrap = $('#syncResultDebug');
+  const dbgBody = $('#syncResultDebugBody');
+  if (!panel || !body) return;
+  panel.classList.remove('is-ok', 'is-error', 'is-pending');
+  if (kind) panel.classList.add('is-' + kind);
+  body.innerHTML = html || '';
+  if (debug && Object.keys(debug).length) {
+    if (dbgBody) dbgBody.textContent = JSON.stringify(debug, null, 2);
+    if (dbgWrap) dbgWrap.hidden = false;
+  } else {
+    if (dbgWrap) dbgWrap.hidden = true;
+    if (dbgBody) dbgBody.textContent = '';
+  }
+  panel.hidden = false;
+}
+
+function buildSyncResultHtml(s) {
+  const errs = (s.errors || []).length;
+  const names = Array.isArray(s.insertedNames) ? s.insertedNames : [];
+  const headline = `Scanned ${s.rowsScanned ?? 0} · 2026 considered ${s.considered2026 ?? 0} · <strong>inserted ${s.inserted ?? 0}</strong> · duplicates ${s.duplicates ?? 0} · non-2026 ignored ${s.ignoredNon2026 ?? 0}${errs ? ` · <strong>errors ${errs}</strong>` : ''}.`;
+  const newLine = names.length
+    ? `<div style="margin-top:4px">New: <strong>${names.map(esc).join(', ')}</strong>.</div>`
+    : `<div style="margin-top:4px" class="small">No new rows imported.</div>`;
+  const dbg = s.debug || {};
+  let beckettLine = '';
+  if (dbg.beckettCandidate) {
+    const b = dbg.beckettCandidate;
+    const cls = b.verdict === 'inserted' ? '' : 'error';
+    const dup = b.existingMatch ? ` dupOf=${esc(b.existingMatch)}` : '';
+    const err = b.error ? ` error=${esc(String(b.error))}` : '';
+    beckettLine = `<div style="margin-top:6px"><span class="beckett ${cls}">Beckett-like row</span> ${esc(b.name)} (${esc(b.birthdate || '?')}) verdict=<strong>${esc(b.verdict)}</strong>${dup}${err}.</div>`;
+  } else if (dbg.sawBeckett === false && (s.considered2026 ?? 0) > 0) {
+    beckettLine = `<div style="margin-top:6px"><span class="beckett error">No Beckett/Jones row</span> in fetched CSV (${dbg.fetch && dbg.fetch.csvByteLength ? dbg.fetch.csvByteLength + ' bytes' : 'unknown size'}).</div>`;
+  }
+  let errLine = '';
+  if (errs) {
+    const top = (s.errors || []).slice(0, 3).map(e => `<li>${esc(e.row || '(unknown)')}: ${esc(e.error || '')}</li>`).join('');
+    errLine = `<div style="margin-top:6px"><strong>Errors:</strong><ul style="margin:4px 0 0 18px;padding:0">${top}</ul></div>`;
+  }
+  return headline + newLine + beckettLine + errLine;
+}
+
 async function syncGoogleForm() {
   if (!confirm('Pull new 2026 form responses from the Google Sheet?')) return;
   const btn = $('#syncBtn');
   const prevLabel = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Syncing…';
+  // Immediate visible feedback in BOTH places: the persistent panel and the
+  // top toast. The panel is the durable one; the toast is just for activity.
+  setSyncResult({ kind: 'pending', html: '<strong>Syncing Google Form responses…</strong> Please wait.' });
   setStatus('Syncing Google Form responses…');
   try {
     const data = await apiFetch('/api/sync/google-sheet', { method: 'POST', body: {} });
     const s = (data && data.summary) || {};
     const errs = (s.errors || []).length;
     const names = Array.isArray(s.insertedNames) ? s.insertedNames : [];
-    let msg = `Sync complete — scanned ${s.rowsScanned ?? 0}, 2026 considered ${s.considered2026 ?? 0}, inserted ${s.inserted ?? 0}, duplicates skipped ${s.duplicates ?? 0}, non-2026 ignored ${s.ignoredNon2026 ?? 0}${errs ? ', errors ' + errs : ''}.`;
-    if (names.length) msg += ' New: ' + names.join(', ') + '.';
-    // Debug breadcrumbs — surface in console for the operator, and append
-    // a short note about Beckett if the debug block has anything to say
-    // (he's the canonical test case for "expected row didn't import").
     const dbg = s.debug || {};
-    if (dbg.beckettCandidate) {
-      const b = dbg.beckettCandidate;
-      msg += ` Beckett-like row: ${b.name} (${b.birthdate || '?'}) verdict=${b.verdict}${b.dupOf ? ' dupOf=' + b.dupOf : ''}${b.existingMatch ? ' dupOf=' + b.existingMatch : ''}.`;
-    } else if (dbg.sawBeckett === false && (s.considered2026 ?? 0) > 0) {
-      msg += ' No Beckett/Jones row in fetched CSV.';
-    }
-    setStatus(msg, errs ? 'error' : 'ok');
+    // Persistent result in the dedicated panel (survives loadPlayers).
+    setSyncResult({
+      kind: errs ? 'error' : 'ok',
+      html: buildSyncResultHtml(s),
+      debug: dbg,
+    });
+    // Plus a short ephemeral toast — kept short so the panel is the
+    // source of truth.
+    const toast = `Sync complete — inserted ${s.inserted ?? 0}, duplicates ${s.duplicates ?? 0}${errs ? ', errors ' + errs : ''}.`;
+    setStatus(toast, errs ? 'error' : 'ok');
     if (errs) console.warn('Sync errors:', s.errors);
     if (names.length) console.info('Sync inserted:', names);
     if (dbg && Object.keys(dbg).length) console.info('Sync debug:', dbg);
     await loadPlayers();
   } catch (e) {
+    setSyncResult({
+      kind: 'error',
+      html: `<strong>Sync failed</strong> — ${esc(e.message || String(e))}`,
+    });
     setStatus('Sync failed: ' + e.message, 'error');
   } finally {
     btn.disabled = false;
