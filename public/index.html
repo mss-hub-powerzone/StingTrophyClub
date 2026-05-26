@@ -170,6 +170,10 @@ html[data-theme="light"] .sync-result-debug pre{background:rgba(0,0,0,.06)}
 .offer-row .warn{color:#e79ac2;font-size:13px}
 .offer-row .tag{display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(103,183,201,.18);color:#9adbe8;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
 .offer-row .tag.unknown{background:rgba(214,145,50,.18);color:#f0b860}
+.modal .offer-client-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;padding:10px;border:1px solid var(--border);border-radius:12px;background:var(--surface2)}
+.modal .offer-client-row select{min-width:160px}
+.modal .offer-client-hint{flex:1 1 240px;min-width:200px;color:var(--muted)}
+@media (max-width:540px){.modal .offer-client-row{flex-direction:column;align-items:stretch}.modal .offer-client-row select{width:100%}}
 .modal .modal-foot{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:12px;align-items:center}
 .modal .modal-foot .small{flex:1;min-width:200px}
 html[data-theme="light"] .modal{background:#fff}
@@ -902,6 +906,70 @@ function buildOutlookComposeUrl(draft) {
   return 'https://outlook.office.com/mail/deeplink/compose?' + params.toString();
 }
 
+// Hand off to the phone's default mail app (Outlook mobile / Apple Mail /
+// Gmail app). The OS account picker lets the user choose which account to
+// send from — solves the "Outlook web forces wrong account" problem.
+function buildMailtoUrl(draft) {
+  const to = draft.emails.length ? draft.emails.join(',') : '';
+  const q = [];
+  if (draft.subject) q.push('subject=' + encodeURIComponent(draft.subject));
+  if (draft.body) q.push('body=' + encodeURIComponent(draft.body));
+  const query = q.length ? '?' + q.join('&') : '';
+  return 'mailto:' + encodeURIComponent(to).replace(/%40/g, '@').replace(/%2C/g, ',') + query;
+}
+
+// Gmail web compose — opens in browser tab, lets user pick Gmail account
+// at the top right. Useful when neither Outlook web nor a mobile mail app
+// has the right account configured.
+function buildGmailComposeUrl(draft) {
+  const params = new URLSearchParams();
+  params.set('view', 'cm');
+  params.set('fs', '1');
+  if (draft.emails.length) params.set('to', draft.emails.join(','));
+  if (draft.subject) params.set('su', draft.subject);
+  if (draft.body) params.set('body', draft.body);
+  return 'https://mail.google.com/mail/?' + params.toString();
+}
+
+// PDF offer packets — relative to public/. If a packet is missing the
+// corresponding entry should be null so the UI shows a disabled state.
+const OFFER_PDFS = {
+  U17: {
+    href: './assets/Sting-U17-N1-Offer-Packet-2026-27.pdf',
+    label: 'U17 N1 offer packet (PDF)',
+    filename: 'Sting-U17-N1-Offer-Packet-2026-27.pdf',
+  },
+  U16: {
+    href: './assets/Sting-U16-ECNL-RL-NTX-Offer-Packet-2026-27.pdf',
+    label: 'U16 ECNL RL NTX offer packet (PDF)',
+    filename: 'Sting-U16-ECNL-RL-NTX-Offer-Packet-2026-27.pdf',
+  },
+};
+
+const EMAIL_CLIENTS = {
+  outlookWeb: { id: 'outlookWeb', label: 'Outlook Web', build: buildOutlookComposeUrl, target: '_blank' },
+  mailto:     { id: 'mailto',     label: 'Mobile mail app', build: buildMailtoUrl,        target: '_self'  },
+  gmail:      { id: 'gmail',      label: 'Gmail Web',      build: buildGmailComposeUrl,   target: '_blank' },
+};
+
+function buildComposeUrl(draft, clientId) {
+  const c = EMAIL_CLIENTS[clientId] || EMAIL_CLIENTS.outlookWeb;
+  return c.build(draft);
+}
+
+// Pick a sensible default once per session. Phones get mailto (so the user
+// can choose the right account in their installed mail app); desktop gets
+// Outlook Web (matches the existing workflow).
+function defaultEmailClient() {
+  try {
+    const saved = localStorage.getItem('stc.emailClient');
+    if (saved && EMAIL_CLIENTS[saved]) return saved;
+  } catch (e) {}
+  const ua = (navigator.userAgent || '').toLowerCase();
+  const isPhone = /android|iphone|ipad|ipod|mobile/.test(ua);
+  return isPhone ? 'mailto' : 'outlookWeb';
+}
+
 async function copyToClipboard(text) {
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -937,17 +1005,28 @@ function openOfferModal() {
 
   const close = () => { if (wrap.parentNode) wrap.parentNode.removeChild(wrap); };
 
+  let clientId = defaultEmailClient();
+
+  const draftBtnLabel = () => 'Open ' + EMAIL_CLIENTS[clientId].label + ' draft';
+
   const rowHtml = ({ player, draft }, idx) => {
     const tagCls = draft.teamKey ? '' : 'unknown';
     const tagText = draft.teamKey ? draft.teamKey + ' template' : 'No template';
     const recipients = draft.emails.length
       ? `<div class="recipients"><span class="small">To:</span> ${esc(draft.emails.join(', '))}</div>`
       : `<div class="warn">No valid email on file — copy the body and send manually.</div>`;
+    const lbl = draftBtnLabel();
     const draftBtn = draft.template && draft.emails.length
-      ? `<button class="btn primary" data-act="open" data-i="${idx}">Open Outlook draft</button>`
+      ? `<button class="btn primary" data-act="open" data-i="${idx}">${esc(lbl)}</button>`
       : draft.template
-        ? `<button class="btn primary" data-act="open" data-i="${idx}" title="Will open Outlook with no recipient — paste an address manually">Open Outlook draft</button>`
-        : `<button class="btn" disabled title="Player has no resolvable team template">Open Outlook draft</button>`;
+        ? `<button class="btn primary" data-act="open" data-i="${idx}" title="Will open with no recipient — paste an address manually">${esc(lbl)}</button>`
+        : `<button class="btn" disabled title="Player has no resolvable team template">${esc(lbl)}</button>`;
+    const pdf = draft.teamKey ? OFFER_PDFS[draft.teamKey] : null;
+    const pdfBtn = pdf
+      ? `<a class="btn" href="${esc(pdf.href)}" download="${esc(pdf.filename)}" target="_blank" rel="noopener" title="Download the ${esc(draft.teamKey)} PDF packet, then attach in your mail app">PDF packet</a>`
+      : draft.teamKey
+        ? `<button class="btn" disabled title="PDF packet not uploaded yet">PDF packet not uploaded yet</button>`
+        : '';
     const noTemplateNote = draft.template
       ? ''
       : `<div class="warn">Could not determine team (U17/U16) for this player. Set teamBucket/birthdate, then retry.</div>`;
@@ -963,6 +1042,7 @@ function openOfferModal() {
       ${noTemplateNote}
       <div class="actions-row">
         ${draftBtn}
+        ${pdfBtn}
         <button class="btn" data-act="copyBody" data-i="${idx}" ${draft.template ? '' : 'disabled'}>Copy body</button>
         <button class="btn" data-act="copySubject" data-i="${idx}" ${draft.template ? '' : 'disabled'}>Copy subject</button>
         <button class="btn" data-act="copyEmails" data-i="${idx}" ${draft.emails.length ? '' : 'disabled'}>Copy email${draft.emails.length === 1 ? '' : 's'}</button>
@@ -974,24 +1054,33 @@ function openOfferModal() {
   const missingTemplateCount = drafts.filter(d => !d.draft.template).length;
   const missingEmailCount = drafts.filter(d => d.draft.template && d.draft.emails.length === 0).length;
 
+  const clientOpts = Object.values(EMAIL_CLIENTS)
+    .map(c => `<option value="${c.id}" ${c.id === clientId ? 'selected' : ''}>${esc(c.label)}</option>`)
+    .join('');
+
   wrap.innerHTML = `
     <div class="modal">
       <div class="modal-head">
         <div>
           <div class="label">Offer email drafts</div>
           <h3>Draft individual offer emails</h3>
-          <div class="small">Each player gets their own Outlook draft so you can review before sending. Attach the PDF offer letter manually before sending.</div>
+          <div class="small">Each player gets their own draft so you can review before sending. Attach the PDF offer packet manually before sending.</div>
         </div>
         <button class="btn" id="offerClose">Close</button>
       </div>
-      <div class="modal-list">${drafts.map(rowHtml).join('')}</div>
+      <div class="offer-client-row">
+        <label class="small" for="offerClient">Open in:</label>
+        <select class="select" id="offerClient">${clientOpts}</select>
+        <div class="small offer-client-hint">On phone, choose <strong>Mobile mail app</strong> to open your installed Outlook/Mail app and pick the right account. Attach the PDF manually before sending.</div>
+      </div>
+      <div class="modal-list" id="offerList">${drafts.map(rowHtml).join('')}</div>
       <div class="modal-foot">
         <div class="small">
           ${drafts.length} player${drafts.length === 1 ? '' : 's'} selected.
           ${draftableCount} ready, ${missingEmailCount} missing email, ${missingTemplateCount} missing team template.
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn" id="offerOpenAll" ${draftableCount ? '' : 'disabled'} title="Opens one Outlook tab per ready draft">Open all (${draftableCount})</button>
+          <button class="btn" id="offerOpenAll" ${draftableCount ? '' : 'disabled'} title="Opens one draft per ready player using the selected mail client">Open all (${draftableCount})</button>
         </div>
       </div>
     </div>`;
@@ -1000,16 +1089,55 @@ function openOfferModal() {
   wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
   wrap.querySelector('#offerClose').onclick = close;
 
+  // Re-render row buttons when the user picks a different mail client so
+  // each "Open … draft" button reflects the active choice.
+  const refreshList = () => {
+    const list = wrap.querySelector('#offerList');
+    if (list) list.innerHTML = drafts.map(rowHtml).join('');
+    bindRowActions();
+  };
+
+  const clientSel = wrap.querySelector('#offerClient');
+  clientSel.addEventListener('change', () => {
+    clientId = EMAIL_CLIENTS[clientSel.value] ? clientSel.value : 'outlookWeb';
+    try { localStorage.setItem('stc.emailClient', clientId); } catch (e) {}
+    refreshList();
+  });
+
+  // Open one draft using the currently selected client. mailto: links must
+  // navigate the current tab so the OS handler picks them up; web compose
+  // URLs open in a new tab as before.
+  const openDraftWith = (draft) => {
+    const c = EMAIL_CLIENTS[clientId] || EMAIL_CLIENTS.outlookWeb;
+    const url = c.build(draft);
+    if (c.target === '_self') {
+      window.location.href = url;
+    } else {
+      window.open(url, '_blank', 'noopener');
+    }
+  };
+
   wrap.querySelector('#offerOpenAll').onclick = () => {
     const ready = drafts.filter(d => d.draft.template && d.draft.emails.length);
     if (!ready.length) return;
-    if (ready.length > 5 && !confirm('Open ' + ready.length + ' new Outlook tabs?')) return;
-    for (const { draft } of ready) {
-      window.open(buildOutlookComposeUrl(draft), '_blank', 'noopener');
+    const c = EMAIL_CLIENTS[clientId] || EMAIL_CLIENTS.outlookWeb;
+    // mailto: can only hand off one draft per navigation, so fall back to
+    // the first ready draft and remind the user.
+    if (c.target === '_self') {
+      openDraftWith(ready[0].draft);
+      setStatus(ready.length === 1
+        ? 'Opened mobile mail draft.'
+        : 'Opened first draft in your mail app. Re-open this modal and tap each player to draft the rest.', 'ok');
+      return;
     }
-    setStatus('Opened ' + ready.length + ' Outlook draft' + (ready.length === 1 ? '' : 's') + '.', 'ok');
+    if (ready.length > 5 && !confirm('Open ' + ready.length + ' new tabs in ' + c.label + '?')) return;
+    for (const { draft } of ready) {
+      window.open(c.build(draft), '_blank', 'noopener');
+    }
+    setStatus('Opened ' + ready.length + ' ' + c.label + ' draft' + (ready.length === 1 ? '' : 's') + '.', 'ok');
   };
 
+  function bindRowActions() {
   wrap.querySelectorAll('[data-act]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const i = +btn.dataset.i;
@@ -1018,7 +1146,7 @@ function openOfferModal() {
       const { draft } = item;
       if (btn.dataset.act === 'open') {
         if (!draft.template) return;
-        window.open(buildOutlookComposeUrl(draft), '_blank', 'noopener');
+        openDraftWith(draft);
         return;
       }
       if (btn.dataset.act === 'copyBody') {
@@ -1033,6 +1161,9 @@ function openOfferModal() {
       }
     });
   });
+  }
+
+  bindRowActions();
 }
 
 function selectVisible() {
@@ -1433,6 +1564,8 @@ window.__stc = {
   // Offer email helpers (exposed for inspection/testing)
   OFFER_TEMPLATES, TEMPLATE_VARIABLES, resolveTeamKey, recipientEmails,
   buildTemplateContext, interpolate, buildOfferDraft, buildOutlookComposeUrl,
+  buildMailtoUrl, buildGmailComposeUrl, buildComposeUrl,
+  EMAIL_CLIENTS, OFFER_PDFS, defaultEmailClient,
   openOfferModal,
 };
 
