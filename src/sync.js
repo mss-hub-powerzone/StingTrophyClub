@@ -154,10 +154,23 @@ export function isDuplicate(candidate, existing) {
 }
 
 async function fetchSheetCsv(env) {
-  const url = (env && env.SHEET_CSV_URL) || SHEET_CSV_URL;
+  const base = (env && env.SHEET_CSV_URL) || SHEET_CSV_URL;
+  // Bust both the upstream Google export cache and Cloudflare's own fetch
+  // cache so admin-triggered syncs always see the latest form responses.
+  // Without this, a sync run minutes after a new form submission can return
+  // a stale CSV and silently skip the new row (it never reaches the dedup
+  // step because it isn't in the response).
+  const sep = base.includes("?") ? "&" : "?";
+  const url = `${base}${sep}_=${Date.now()}`;
   const res = await fetch(url, {
     redirect: "follow",
-    headers: { "user-agent": "stingtrophyclub-sync/1.0" },
+    cache: "no-store",
+    cf: { cacheTtl: 0, cacheEverything: false },
+    headers: {
+      "user-agent": "stingtrophyclub-sync/1.0",
+      "cache-control": "no-cache",
+      pragma: "no-cache",
+    },
   });
   if (!res.ok) {
     throw new Error(`Sheet fetch failed: HTTP ${res.status}`);
