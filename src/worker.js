@@ -75,6 +75,18 @@ async function updatePlayer(request, env, id, { fillDefaults }) {
     return json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  // Merge sticky inputs from the existing row so PATCHes that touch only
+  // birthdate still honor a previously-saved team override, and vice versa.
+  // playerToColumns recomputes team_bucket/label/coach/league from the merged
+  // (birthdate, team_override) pair whenever either is in the payload.
+  if (!fillDefaults) {
+    if (("birthdate" in body) && !("teamOverride" in body)) {
+      body = { ...body, teamOverride: existing.team_override || "" };
+    } else if (("teamOverride" in body) && !("birthdate" in body)) {
+      body = { ...body, birthdate: existing.birthdate || "" };
+    }
+  }
+
   const cols = playerToColumns(body, { fillDefaults });
   const colNames = Object.keys(cols);
   if (colNames.length === 0) {

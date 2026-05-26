@@ -29,6 +29,7 @@ export const COLUMNS = [
   ["contact2_phone",  "contact2Phone"],
   ["contact2_email",  "contact2Email"],
   ["notes",           "notes"],
+  ["team_override",   "teamOverride"],
 ];
 
 const BOOL_FIELDS = new Set(["follow_up"]);
@@ -44,14 +45,30 @@ export function rowToPlayer(row) {
   return out;
 }
 
-function deriveTeamFields(birthdate) {
-  let bucket = "Outside Range";
-  if (birthdate && birthdate >= "2009-08-01" && birthdate <= "2010-07-31") bucket = "U17";
-  else if (birthdate && birthdate >= "2010-08-01" && birthdate <= "2011-07-31") bucket = "U16";
-  const label = bucket === "U17" ? "U17 Boys" : bucket === "U16" ? "U16 Boys" : "Outside Range";
-  const coach = bucket === "U17" ? "Jon Barber" : bucket === "U16" ? "Wayne Smith" : "";
-  const league = bucket === "U17" ? "N1" : bucket === "U16" ? "ECNL RL NTX" : "";
-  return { team_bucket: bucket, team_label: label, coach, league };
+// Canonical (bucket, label, coach, league) for a given team key. The override
+// path and the age-window path both feed through this so the dashboard, CSV
+// export, and offer-email routing stay consistent.
+function teamFieldsFor(bucket) {
+  if (bucket === "U17") {
+    return { team_bucket: "U17", team_label: "U17 Boys", coach: "Jon Barber", league: "N1" };
+  }
+  if (bucket === "U16") {
+    return { team_bucket: "U16", team_label: "U16 Boys", coach: "Wayne Smith", league: "ECNL RL NTX" };
+  }
+  return { team_bucket: "Outside Range", team_label: "Outside Range", coach: "", league: "" };
+}
+
+function bucketFromBirthdate(birthdate) {
+  if (birthdate && birthdate >= "2009-08-01" && birthdate <= "2010-07-31") return "U17";
+  if (birthdate && birthdate >= "2010-08-01" && birthdate <= "2011-07-31") return "U16";
+  return "Outside Range";
+}
+
+function deriveTeamFields(birthdate, override) {
+  // Explicit override wins; otherwise fall back to birthdate-derived bucket.
+  const normOverride = String(override || "").trim().toUpperCase();
+  if (normOverride === "U17" || normOverride === "U16") return teamFieldsFor(normOverride);
+  return teamFieldsFor(bucketFromBirthdate(birthdate));
 }
 
 export function playerToColumns(body, { fillDefaults = false } = {}) {
@@ -68,12 +85,25 @@ export function playerToColumns(body, { fillDefaults = false } = {}) {
     }
   }
 
+  // Normalize team_override values to '', 'U17', or 'U16' so downstream
+  // consumers don't have to deal with case/whitespace variants.
+  if ("team_override" in out) {
+    const norm = String(out.team_override || "").trim().toUpperCase();
+    out.team_override = (norm === "U17" || norm === "U16") ? norm : "";
+  }
+
   const birthdateProvided = "birthdate" in body;
+  const overrideProvided = "teamOverride" in body;
   const teamProvided = "teamBucket" in body || "teamLabel" in body || "coach" in body || "league" in body;
-  if (birthdateProvided && !teamProvided) {
-    Object.assign(out, deriveTeamFields(out.birthdate || ""));
-  } else if (fillDefaults && !teamProvided) {
-    Object.assign(out, deriveTeamFields(out.birthdate || ""));
+
+  // Recompute team_bucket/label/coach/league whenever the inputs that drive
+  // them change. The override is sticky in D1, so a future birthdate edit
+  // still respects it.
+  const shouldDerive = (birthdateProvided && !teamProvided)
+    || overrideProvided
+    || (fillDefaults && !teamProvided);
+  if (shouldDerive) {
+    Object.assign(out, deriveTeamFields(out.birthdate || "", out.team_override || ""));
   }
 
   if (BOOL_FIELDS.has("follow_up") && out.follow_up === true) out.follow_up = 1;

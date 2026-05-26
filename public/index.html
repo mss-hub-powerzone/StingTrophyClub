@@ -51,6 +51,12 @@ button,input,select,textarea{font:inherit}
 .declined-badge::before{content:"";width:6px;height:6px;border-radius:50%;background:#e79ac2}
 .declined-badge.review{background:rgba(214,145,50,.18);color:#f0b860;border-color:rgba(214,145,50,.35)}
 .declined-badge.review::before{background:#f0b860}
+/* Clickable variant of the declined badge */
+button.declined-badge{font:inherit;cursor:pointer}
+button.declined-badge:hover{filter:brightness(1.1)}
+button.declined-badge:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+/* Manual team override indicator (used in drawer header and table/cards) */
+.manual-team-badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.04em;background:rgba(103,183,201,.18);color:#9adbe8;border:1px solid rgba(103,183,201,.35)}
 table{width:100%;border-collapse:collapse}
 th,td{padding:14px;border-bottom:1px solid #28261f;text-align:left;vertical-align:top}
 th{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);background:#171715;position:sticky;top:0;z-index:1}
@@ -248,7 +254,7 @@ html[data-theme="light"] .overlay{background:rgba(0,0,0,.25)}
 
       <div class="bulkbar" id="bulkbar">
         <span class="small"><span class="selcount" id="selCount">0</span> selected</span>
-        <span id="declinedBadge" class="declined-badge" role="status" aria-live="polite" hidden></span>
+        <button id="declinedBadge" type="button" class="declined-badge" aria-live="polite" hidden></button>
         <button class="btn" id="selectVisible" type="button">Select visible</button>
         <button class="btn" id="clearSelection" type="button">Clear</button>
         <button class="btn primary" id="emailSelected" type="button">Email selected (BCC)</button>
@@ -486,7 +492,7 @@ function table(rows) {
     <tr data-id="${esc(p.id)}" class="${selectedIds.has(p.id) ? 'is-selected' : ''}">
       <td><input type="checkbox" class="rowsel" data-sel="${esc(p.id)}" ${selectedIds.has(p.id) ? 'checked' : ''}></td>
       <td><strong>${esc(full(p))}</strong><div class="small">${p.playerType === 'prospect' ? 'Potential new player' : 'Current roster/imported'}</div></td>
-      <td>${esc(p.teamBucket || '')}</td>
+      <td>${esc(p.teamBucket || '')}${p.teamOverride ? ' <span class="manual-team-badge" title="Manual team override — pinned regardless of birthdate">Manual</span>' : ''}</td>
       <td><span class="badge ${statusClass(p.status)}">${esc(p.status || '')}</span></td>
       <td>${esc(p.position || '—')}</td>
       <td>${esc(fmt(p.birthdate))}</td>
@@ -518,7 +524,7 @@ function cardsList(rows) {
           <div class="name">${esc(full(p))}</div>
           <span class="badge ${statusClass(p.status)}">${esc(p.status || '')}</span>
         </div>
-        <div class="meta">${esc(p.teamBucket || '')} • ${esc(p.position || '—')} • ${esc(fmt(p.birthdate))}</div>
+        <div class="meta">${esc(p.teamBucket || '')}${p.teamOverride ? ' <span class="manual-team-badge" title="Manual team override — pinned regardless of birthdate">Manual</span>' : ''} • ${esc(p.position || '—')} • ${esc(fmt(p.birthdate))}</div>
         <div class="kv">
           <div class="k">School</div><div class="v">${esc(p.school || '—')}</div>
           <div class="k">Club</div><div class="v">${esc(p.club || '—')}</div>
@@ -1048,16 +1054,19 @@ function renderDeclinedState(rows) {
     badge.classList.remove('review');
     if (kind === 'hidden') {
       badge.textContent = declinedTotal === 1 ? '1 declined hidden' : `${declinedTotal} declined hidden`;
-      badge.title = `${declinedTotal} ${noun} excluded from Select visible / bulk email. Uncheck "Hide declined players" or set Status to "Declined" to review them.`;
+      badge.title = `${declinedTotal} ${noun} excluded from Select visible / bulk email. Click to review.`;
+      badge.setAttribute('aria-label', `${declinedTotal} ${noun} hidden. Activate to review them.`);
       badge.hidden = false;
     } else if (kind === 'review') {
       badge.textContent = declinedTotal === 1 ? '1 declined shown' : `${declinedTotal} declined shown`;
-      badge.title = 'Status filter is set to Declined. These players will be included in Select visible / bulk email if selected.';
+      badge.title = 'Status filter is set to Declined. Click to return to the hidden view.';
+      badge.setAttribute('aria-label', `${declinedTotal} ${noun} shown for review. Activate to hide them again.`);
       badge.classList.add('review');
       badge.hidden = false;
     } else {
       badge.textContent = '';
       badge.title = '';
+      badge.removeAttribute('aria-label');
       badge.hidden = true;
     }
   }
@@ -1084,7 +1093,7 @@ function openDrawer(id) {
   selectedId = id;
   const p = players.find(x => x.id === id);
   if (!p) return;
-  $('#drawer').innerHTML = `<div style="display:flex;justify-content:space-between;gap:8px;align-items:start"><div><div class="label">Player detail</div><h2 style="margin:0 0 4px">${esc(full(p))}</h2><div class="small">${esc(p.teamLabel || '')} • ${esc(p.league || '')}</div></div><button class="btn" id="close">Close</button></div><div class="stack" style="margin-top:16px"><div><div class="label">First name</div><input class="input" data-f="firstName" value="${esc(p.firstName || '')}"></div><div><div class="label">Last name</div><input class="input" data-f="lastName" value="${esc(p.lastName || '')}"></div><div><div class="label">Status</div><select class="select" data-f="status"><option ${p.status === 'Committed' ? 'selected' : ''}>Committed</option><option ${p.status === 'Offer Sent' ? 'selected' : ''}>Offer Sent</option><option ${p.status === 'Prospect' ? 'selected' : ''}>Prospect</option><option ${p.status === 'Evaluating' ? 'selected' : ''}>Evaluating</option><option ${p.status === 'Declined' ? 'selected' : ''}>Declined</option><option ${p.status === 'Waitlist' ? 'selected' : ''}>Waitlist</option></select></div><div><div class="label">Birthdate</div><input class="input" type="date" data-f="birthdate" value="${esc(p.birthdate || '')}"></div><div><div class="label">Position</div><input class="input" data-f="position" value="${esc(p.position || '')}"></div><div><div class="label">School</div><input class="input" data-f="school" value="${esc(p.school || '')}"></div><div><div class="label">Club</div><input class="input" data-f="club" value="${esc(p.club || '')}"></div><div><div class="label">Player type</div><select class="select" data-f="playerType"><option value="roster" ${p.playerType === 'roster' ? 'selected' : ''}>Current roster/imported</option><option value="prospect" ${p.playerType === 'prospect' ? 'selected' : ''}>Potential new player</option></select></div><div><div class="label">Offer sent date</div><input class="input" type="date" data-f="offerSent" value="${esc(p.offerSent || '')}"></div><div><div class="label">Commitment date</div><input class="input" type="date" data-f="commitmentDate" value="${esc(p.commitmentDate || '')}"></div><div><div class="label">Follow-up needed</div><select class="select" data-f="followUp"><option value="true" ${p.followUp ? 'selected' : ''}>Yes</option><option value="false" ${!p.followUp ? 'selected' : ''}>No</option></select></div><div><div class="label">Primary email (player)</div><input class="input" type="email" data-f="email" value="${esc(p.email || '')}" placeholder="player@example.com"></div><div><div class="label">Primary phone (player)</div><input class="input" type="tel" data-f="phone" value="${esc(p.phone || '')}" placeholder="(555) 123-4567"></div><div style="border-top:1px solid var(--border);margin-top:6px;padding-top:12px"><div class="label">Parent / Guardian 1</div><input class="input" data-f="contact1Name" value="${esc(p.contact1Name || '')}" placeholder="Name" style="margin-bottom:8px"><input class="input" type="tel" data-f="contact1Phone" value="${esc(p.contact1Phone || '')}" placeholder="Phone" style="margin-bottom:8px"><input class="input" type="email" data-f="contact1Email" value="${esc(p.contact1Email || '')}" placeholder="Email"></div><div><div class="label">Parent / Guardian 2</div><input class="input" data-f="contact2Name" value="${esc(p.contact2Name || '')}" placeholder="Name" style="margin-bottom:8px"><input class="input" type="tel" data-f="contact2Phone" value="${esc(p.contact2Phone || '')}" placeholder="Phone" style="margin-bottom:8px"><input class="input" type="email" data-f="contact2Email" value="${esc(p.contact2Email || '')}" placeholder="Email"></div><div><div class="label">Notes</div><textarea data-f="notes">${esc(p.notes || '')}</textarea></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="save">Save changes</button><button class="btn" id="del" style="color:#e79ac2;border-color:#7a415f">Delete player</button></div></div>`;
+  $('#drawer').innerHTML = `<div style="display:flex;justify-content:space-between;gap:8px;align-items:start"><div><div class="label">Player detail</div><h2 style="margin:0 0 4px">${esc(full(p))}</h2><div class="small">${esc(p.teamLabel || '')} • ${esc(p.league || '')}${p.teamOverride ? ' • <span class="manual-team-badge">Manual team</span>' : ''}</div></div><button class="btn" id="close">Close</button></div><div class="stack" style="margin-top:16px"><div><div class="label">First name</div><input class="input" data-f="firstName" value="${esc(p.firstName || '')}"></div><div><div class="label">Last name</div><input class="input" data-f="lastName" value="${esc(p.lastName || '')}"></div><div><div class="label">Status</div><select class="select" data-f="status"><option ${p.status === 'Committed' ? 'selected' : ''}>Committed</option><option ${p.status === 'Offer Sent' ? 'selected' : ''}>Offer Sent</option><option ${p.status === 'Prospect' ? 'selected' : ''}>Prospect</option><option ${p.status === 'Evaluating' ? 'selected' : ''}>Evaluating</option><option ${p.status === 'Declined' ? 'selected' : ''}>Declined</option><option ${p.status === 'Waitlist' ? 'selected' : ''}>Waitlist</option></select></div><div><div class="label">Birthdate</div><input class="input" type="date" data-f="birthdate" value="${esc(p.birthdate || '')}"></div><div><div class="label" title="Pin this player to a team regardless of birthdate. Useful for players playing up or out-of-range players still on the roster.">Team (manual override)</div><select class="select" data-f="teamOverride"><option value="" ${!p.teamOverride ? 'selected' : ''}>Auto (by birthdate)</option><option value="U17" ${p.teamOverride === 'U17' ? 'selected' : ''}>U17 Boys • N1 • Jon Barber</option><option value="U16" ${p.teamOverride === 'U16' ? 'selected' : ''}>U16 Boys • ECNL RL NTX • Wayne Smith</option></select><div class="small" style="margin-top:4px">Auto routes by birthdate (U17 = Aug 2009–Jul 2010, U16 = Aug 2010–Jul 2011). Override pins the player to a team for the dashboard and offer email template.</div></div><div><div class="label">Position</div><input class="input" data-f="position" value="${esc(p.position || '')}"></div><div><div class="label">School</div><input class="input" data-f="school" value="${esc(p.school || '')}"></div><div><div class="label">Club</div><input class="input" data-f="club" value="${esc(p.club || '')}"></div><div><div class="label">Player type</div><select class="select" data-f="playerType"><option value="roster" ${p.playerType === 'roster' ? 'selected' : ''}>Current roster/imported</option><option value="prospect" ${p.playerType === 'prospect' ? 'selected' : ''}>Potential new player</option></select></div><div><div class="label">Offer sent date</div><input class="input" type="date" data-f="offerSent" value="${esc(p.offerSent || '')}"></div><div><div class="label">Commitment date</div><input class="input" type="date" data-f="commitmentDate" value="${esc(p.commitmentDate || '')}"></div><div><div class="label">Follow-up needed</div><select class="select" data-f="followUp"><option value="true" ${p.followUp ? 'selected' : ''}>Yes</option><option value="false" ${!p.followUp ? 'selected' : ''}>No</option></select></div><div><div class="label">Primary email (player)</div><input class="input" type="email" data-f="email" value="${esc(p.email || '')}" placeholder="player@example.com"></div><div><div class="label">Primary phone (player)</div><input class="input" type="tel" data-f="phone" value="${esc(p.phone || '')}" placeholder="(555) 123-4567"></div><div style="border-top:1px solid var(--border);margin-top:6px;padding-top:12px"><div class="label">Parent / Guardian 1</div><input class="input" data-f="contact1Name" value="${esc(p.contact1Name || '')}" placeholder="Name" style="margin-bottom:8px"><input class="input" type="tel" data-f="contact1Phone" value="${esc(p.contact1Phone || '')}" placeholder="Phone" style="margin-bottom:8px"><input class="input" type="email" data-f="contact1Email" value="${esc(p.contact1Email || '')}" placeholder="Email"></div><div><div class="label">Parent / Guardian 2</div><input class="input" data-f="contact2Name" value="${esc(p.contact2Name || '')}" placeholder="Name" style="margin-bottom:8px"><input class="input" type="tel" data-f="contact2Phone" value="${esc(p.contact2Phone || '')}" placeholder="Phone" style="margin-bottom:8px"><input class="input" type="email" data-f="contact2Email" value="${esc(p.contact2Email || '')}" placeholder="Email"></div><div><div class="label">Notes</div><textarea data-f="notes">${esc(p.notes || '')}</textarea></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="save">Save changes</button><button class="btn" id="del" style="color:#e79ac2;border-color:#7a415f">Delete player</button></div></div>`;
   $('#drawer').classList.add('open');
   $('#overlay').classList.add('show');
   $('#close').onclick = closeDrawer;
@@ -1178,6 +1187,36 @@ $('#clearSelection').onclick = clearSelection;
 $('#emailSelected').onclick = emailSelected;
 $('#copyEmails').onclick = copyEmails;
 $('#offerEmail').onclick = openOfferModal;
+// Declined badge: clicking toggles between "review" (Status=Declined) and
+// the default "hidden" state. This is the quickest way to inspect who's been
+// suppressed without leaving the bulk action area.
+(function initDeclinedBadgeClick() {
+  const badge = $('#declinedBadge');
+  if (!badge) return;
+  badge.addEventListener('click', () => {
+    const state = computeDeclinedState();
+    const statusEl = $('#status');
+    if (!statusEl) return;
+    if (state.kind === 'hidden') {
+      // Pop into review: surface declined players via the Status filter.
+      statusEl.value = 'Declined';
+    } else if (state.kind === 'review') {
+      // Return to the default hidden view.
+      statusEl.value = 'all';
+    } else {
+      return; // 'none' or 'visible' — no-op (the badge is hidden in these states)
+    }
+    render();
+    const newState = computeDeclinedState();
+    if (newState.kind === 'review') {
+      setStatus(`Reviewing ${newState.declinedTotal} declined player${newState.declinedTotal === 1 ? '' : 's'}.`, 'ok');
+    } else if (newState.kind === 'hidden') {
+      setStatus(`Hiding ${newState.declinedTotal} declined player${newState.declinedTotal === 1 ? '' : 's'} from bulk email.`, 'ok');
+    }
+    setTimeout(() => setStatus(''), 1500);
+  });
+})();
+
 // Hide-declined toggle: persist preference and prune currently-selected
 // declined players when re-enabled, so users can never accidentally bulk
 // email a declined player after flipping the switch back on.
