@@ -218,6 +218,11 @@ export async function runSync(env, { csvText } = {}) {
     duplicates: 0,
     ignoredNon2026: 0,
     errors: [],
+    // Names of rows inserted this run — surfaced in the admin response so the
+    // operator can see exactly who was imported (or, if expected names are
+    // missing, that they were skipped/deduped). Kept short (first + last) to
+    // avoid leaking the rest of the row to logs.
+    insertedNames: [],
   };
 
   let text = csvText;
@@ -257,6 +262,9 @@ export async function runSync(env, { csvText } = {}) {
       }
       existing.push(candidate);
       summary.inserted++;
+      summary.insertedNames.push(
+        `${candidate.firstName} ${candidate.lastName}`.trim()
+      );
     } catch (e) {
       summary.errors.push({
         row: row[COL.timestamp] || "(unknown)",

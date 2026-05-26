@@ -1108,6 +1108,7 @@ async function savePlayer() {
   document.querySelectorAll('#drawer [data-f]').forEach(el => {
     patch[el.dataset.f] = el.dataset.f === 'followUp' ? (el.value === 'true') : el.value;
   });
+  const beforeTeam = (p.teamBucket || '') + ' ' + (p.teamOverride || '');
   setStatus('Saving…');
   try {
     const data = await apiFetch(API_BASE + '/' + encodeURIComponent(p.id), { method: 'PATCH', body: patch });
@@ -1116,8 +1117,14 @@ async function savePlayer() {
       const idx = players.findIndex(x => x.id === p.id);
       if (idx >= 0) players[idx] = updated;
     }
-    setStatus('Saved.', 'ok');
-    setTimeout(() => setStatus(''), 1200);
+    // Call out a team change explicitly so the user sees that a manual
+    // override or birthdate edit re-derived the bucket as expected.
+    const afterTeam = updated ? (updated.teamBucket || '') + ' ' + (updated.teamOverride || '') : beforeTeam;
+    const teamMsg = (updated && beforeTeam !== afterTeam)
+      ? ` Now on ${updated.teamLabel || updated.teamBucket || 'Outside Range'}${updated.teamOverride ? ' (manual)' : ''}.`
+      : '';
+    setStatus('Saved.' + teamMsg, 'ok');
+    setTimeout(() => setStatus(''), 2200);
     render();
     openDrawer(p.id);
   } catch (e) {
@@ -1277,9 +1284,12 @@ async function syncGoogleForm() {
     const data = await apiFetch('/api/sync/google-sheet', { method: 'POST', body: {} });
     const s = (data && data.summary) || {};
     const errs = (s.errors || []).length;
-    const msg = `Sync complete — scanned ${s.rowsScanned ?? 0}, 2026 considered ${s.considered2026 ?? 0}, inserted ${s.inserted ?? 0}, duplicates skipped ${s.duplicates ?? 0}, non-2026 ignored ${s.ignoredNon2026 ?? 0}${errs ? ', errors ' + errs : ''}.`;
+    const names = Array.isArray(s.insertedNames) ? s.insertedNames : [];
+    let msg = `Sync complete — scanned ${s.rowsScanned ?? 0}, 2026 considered ${s.considered2026 ?? 0}, inserted ${s.inserted ?? 0}, duplicates skipped ${s.duplicates ?? 0}, non-2026 ignored ${s.ignoredNon2026 ?? 0}${errs ? ', errors ' + errs : ''}.`;
+    if (names.length) msg += ' New: ' + names.join(', ') + '.';
     setStatus(msg, errs ? 'error' : 'ok');
     if (errs) console.warn('Sync errors:', s.errors);
+    if (names.length) console.info('Sync inserted:', names);
     await loadPlayers();
   } catch (e) {
     setStatus('Sync failed: ' + e.message, 'error');
