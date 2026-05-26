@@ -155,21 +155,26 @@ export function isDuplicate(candidate, existing) {
 
 async function fetchSheetCsv(env) {
   const base = (env && env.SHEET_CSV_URL) || SHEET_CSV_URL;
-  // Bust both the upstream Google export cache and Cloudflare's own fetch
-  // cache so admin-triggered syncs always see the latest form responses.
-  // Without this, a sync run minutes after a new form submission can return
-  // a stale CSV and silently skip the new row (it never reaches the dedup
-  // step because it isn't in the response).
+  // Bust both the upstream Google export cache (via a unique query string)
+  // and Cloudflare's own fetch cache (via cache: "no-store") so an admin-
+  // triggered sync always sees the latest form responses. Without this, a
+  // sync run minutes after a new form submission can return a stale CSV
+  // and silently skip the new row.
+  //
+  // Note: do NOT also set the `cf: { cacheTtl, cacheEverything }` block
+  // here. Cloudflare Workers rejects that combination with
+  //   "CacheTtl: 0, is not compatible with cache: no-store header"
+  // because `cf.cacheTtl` is a directive *to* the cache while
+  // `cache: "no-store"` says "do not consult the cache at all". The
+  // cache-buster query param + `cache: "no-store"` is the supported
+  // combination and is sufficient on its own.
   const sep = base.includes("?") ? "&" : "?";
   const url = `${base}${sep}_=${Date.now()}`;
   const res = await fetch(url, {
     redirect: "follow",
     cache: "no-store",
-    cf: { cacheTtl: 0, cacheEverything: false },
     headers: {
       "user-agent": "stingtrophyclub-sync/1.0",
-      "cache-control": "no-cache",
-      pragma: "no-cache",
     },
   });
   if (!res.ok) {
