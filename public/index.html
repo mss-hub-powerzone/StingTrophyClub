@@ -1123,8 +1123,16 @@ async function savePlayer() {
     const teamMsg = (updated && beforeTeam !== afterTeam)
       ? ` Now on ${updated.teamLabel || updated.teamBucket || 'Outside Range'}${updated.teamOverride ? ' (manual)' : ''}.`
       : '';
-    setStatus('Saved.' + teamMsg, 'ok');
-    setTimeout(() => setStatus(''), 2200);
+    const warning = data && data.warning;
+    if (warning) {
+      // Schema-fallback path on the worker side: surface the operator hint
+      // so they know to run the migration.
+      setStatus('Saved with warning — ' + warning, 'error');
+      console.warn('Save warning:', warning);
+    } else {
+      setStatus('Saved.' + teamMsg, 'ok');
+      setTimeout(() => setStatus(''), 2200);
+    }
     render();
     openDrawer(p.id);
   } catch (e) {

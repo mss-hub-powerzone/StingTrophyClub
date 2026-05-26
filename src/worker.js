@@ -29,24 +29,45 @@ async function createPlayer(request, env) {
   const id = body.id && /^[a-z0-9-]+$/.test(body.id) ? body.id : makeId(body);
   const cols = playerToColumns(body, { fillDefaults: true });
 
-  const colNames = ["id", ...COLUMNS.map(([c]) => c)];
-  const placeholders = colNames.map(() => "?").join(", ");
-  const values = [id, ...COLUMNS.map(([c]) => cols[c])];
-
-  try {
+  async function runInsert(colsToWrite) {
+    const names = ["id", ...Object.keys(colsToWrite)];
+    const placeholders = names.map(() => "?").join(", ");
+    const values = [id, ...Object.keys(colsToWrite).map(c => colsToWrite[c])];
     await env.DB.prepare(
-      `INSERT INTO players (${colNames.join(", ")}) VALUES (${placeholders})`
+      `INSERT INTO players (${names.join(", ")}) VALUES (${placeholders})`
     ).bind(...values).run();
+  }
+
+  let warning = "";
+  try {
+    await runInsert(cols);
   } catch (e) {
     const msg = String(e && e.message || e);
     if (msg.toLowerCase().includes("unique") || msg.toLowerCase().includes("constraint")) {
       return json({ error: "Player with this id already exists", id }, { status: 409 });
     }
-    return json({ error: msg }, { status: 500 });
+    if (isMissingColumnError(e)) {
+      const { stripped, removed } = stripPostInitColumns(cols);
+      if (removed.length === 0) return json({ error: msg }, { status: 500 });
+      try {
+        await runInsert(stripped);
+        warning =
+          "D1 is missing column(s) " + removed.join(", ") +
+          ". Apply the latest migrations (wrangler d1 migrations apply " +
+          "stingtrophyclub --remote) to enable team override persistence. " +
+          "Other fields saved.";
+      } catch (e2) {
+        return json({ error: String(e2 && e2.message || e2) }, { status: 500 });
+      }
+    } else {
+      return json({ error: msg }, { status: 500 });
+    }
   }
 
   const row = await env.DB.prepare("SELECT * FROM players WHERE id = ?").bind(id).first();
-  return json({ player: rowToPlayer(row) }, { status: 201 });
+  const responseBody = { player: rowToPlayer(row) };
+  if (warning) responseBody.warning = warning;
+  return json(responseBody, { status: 201 });
 }
 
 async function loadPlayer(env, id) {
@@ -58,6 +79,27 @@ async function getPlayer(env, id) {
   const row = await loadPlayer(env, id);
   if (!row) return json({ error: "Not found" }, { status: 404 });
   return json({ player: rowToPlayer(row) });
+}
+
+// Columns that were added by later migrations and may be absent from a D1
+// database that hasn't had the migration applied yet. If a write hits a
+// "no such column" error we strip these and retry, so the rest of the
+// fields still save and the operator gets a clear warning instead of a
+// bare 500.
+const POST_INIT_COLUMNS = ["team_override"];
+
+function isMissingColumnError(err) {
+  const msg = String((err && err.message) || err || "").toLowerCase();
+  return msg.includes("no such column") || msg.includes("has no column");
+}
+
+function stripPostInitColumns(cols) {
+  const stripped = { ...cols };
+  const removed = [];
+  for (const c of POST_INIT_COLUMNS) {
+    if (c in stripped) { delete stripped[c]; removed.push(c); }
+  }
+  return { stripped, removed };
 }
 
 async function updatePlayer(request, env, id, { fillDefaults }) {
@@ -92,15 +134,56 @@ async function updatePlayer(request, env, id, { fillDefaults }) {
   if (colNames.length === 0) {
     return json({ player: rowToPlayer(existing) });
   }
-  const setClause = colNames.map(c => `${c} = ?`).join(", ");
-  const values = colNames.map(c => cols[c]);
 
-  await env.DB.prepare(
-    `UPDATE players SET ${setClause}, updated_at = datetime('now') WHERE id = ?`
-  ).bind(...values, id).run();
+  async function runUpdate(colsToWrite) {
+    const names = Object.keys(colsToWrite);
+    const setClause = names.map(c => `${c} = ?`).join(", ");
+    const values = names.map(c => colsToWrite[c]);
+    await env.DB.prepare(
+      `UPDATE players SET ${setClause}, updated_at = datetime('now') WHERE id = ?`
+    ).bind(...values, id).run();
+  }
+
+  let warning = "";
+  try {
+    await runUpdate(cols);
+  } catch (e) {
+    if (isMissingColumnError(e)) {
+      // Likely the migration hasn't been applied to this D1. Strip the
+      // post-init columns and retry so the rest of the edit lands.
+      const { stripped, removed } = stripPostInitColumns(cols);
+      if (removed.length === 0) {
+        return json(
+          { error: "D1 update failed: " + String((e && e.message) || e) },
+          { status: 500 }
+        );
+      }
+      try {
+        await runUpdate(stripped);
+        warning =
+          "D1 is missing column(s) " + removed.join(", ") +
+          ". Apply the latest migrations (wrangler d1 migrations apply " +
+          "stingtrophyclub --remote) to enable team override persistence. " +
+          "Other fields saved.";
+      } catch (e2) {
+        return json(
+          { error: "D1 update failed after schema-fallback retry: " +
+            String((e2 && e2.message) || e2) },
+          { status: 500 }
+        );
+      }
+    } else {
+      return json(
+        { error: "D1 update failed: " + String((e && e.message) || e) },
+        { status: 500 }
+      );
+    }
+  }
 
   const row = await loadPlayer(env, id);
-  return json({ player: rowToPlayer(row) });
+  const responseBody = { player: rowToPlayer(row) };
+  if (warning) responseBody.warning = warning;
+  return json(responseBody);
 }
 
 async function deletePlayer(request, env, id) {
