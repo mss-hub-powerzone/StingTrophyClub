@@ -1295,9 +1295,20 @@ async function syncGoogleForm() {
     const names = Array.isArray(s.insertedNames) ? s.insertedNames : [];
     let msg = `Sync complete — scanned ${s.rowsScanned ?? 0}, 2026 considered ${s.considered2026 ?? 0}, inserted ${s.inserted ?? 0}, duplicates skipped ${s.duplicates ?? 0}, non-2026 ignored ${s.ignoredNon2026 ?? 0}${errs ? ', errors ' + errs : ''}.`;
     if (names.length) msg += ' New: ' + names.join(', ') + '.';
+    // Debug breadcrumbs — surface in console for the operator, and append
+    // a short note about Beckett if the debug block has anything to say
+    // (he's the canonical test case for "expected row didn't import").
+    const dbg = s.debug || {};
+    if (dbg.beckettCandidate) {
+      const b = dbg.beckettCandidate;
+      msg += ` Beckett-like row: ${b.name} (${b.birthdate || '?'}) verdict=${b.verdict}${b.dupOf ? ' dupOf=' + b.dupOf : ''}${b.existingMatch ? ' dupOf=' + b.existingMatch : ''}.`;
+    } else if (dbg.sawBeckett === false && (s.considered2026 ?? 0) > 0) {
+      msg += ' No Beckett/Jones row in fetched CSV.';
+    }
     setStatus(msg, errs ? 'error' : 'ok');
     if (errs) console.warn('Sync errors:', s.errors);
     if (names.length) console.info('Sync inserted:', names);
+    if (dbg && Object.keys(dbg).length) console.info('Sync debug:', dbg);
     await loadPlayers();
   } catch (e) {
     setStatus('Sync failed: ' + e.message, 'error');

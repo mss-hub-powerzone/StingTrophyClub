@@ -177,10 +177,8 @@ async function fetchSheetCsv(env) {
       "user-agent": "stingtrophyclub-sync/1.0",
     },
   });
-  if (!res.ok) {
-    throw new Error(`Sheet fetch failed: HTTP ${res.status}`);
-  }
-  return await res.text();
+  const text = res.ok ? await res.text() : "";
+  return { url, status: res.status, ok: res.ok, text };
 }
 
 async function insertPlayer(env, body) {
@@ -223,20 +221,125 @@ export async function runSync(env, { csvText } = {}) {
     // missing, that they were skipped/deduped). Kept short (first + last) to
     // avoid leaking the rest of the row to logs.
     insertedNames: [],
+    // Admin-only diagnostic block. Helps answer "why didn't <X> import?"
+    // by showing whether the CSV the worker fetched actually contained the
+    // row, and what verdict each 2026 candidate received. Names come from
+    // the public Google Sheet and from D1 (which the admin already has
+    // access to), so no new PII surface.
+    debug: {
+      fetch: null,             // { url, status, ok, csvByteLength, headerLine, lastDataLine }
+      existingCount: 0,
+      sawBeckett: false,       // first=Beckett OR last=Jones found in CSV
+      beckettCandidate: null,  // { name, birthdate, verdict, dupOf?, error? }
+      lastTwo2026Names: [],    // last two 2026 candidate names processed
+      duplicateNames: [],      // up to 50 dup candidate names (form name -> existing match)
+    },
   };
 
   let text = csvText;
+  // ok=true is the "no fetch needed" default (csvText was supplied directly).
+  // It is reset to the real upstream result whenever fetchSheetCsv runs.
+  let fetchMeta = { url: null, status: null, ok: true };
   if (text == null) {
-    text = await fetchSheetCsv(env);
+    try {
+      const r = await fetchSheetCsv(env);
+      fetchMeta = { url: r.url, status: r.status, ok: r.ok };
+      text = r.text;
+      if (!r.ok) {
+        summary.errors.push({
+          row: "(fetch)",
+          error: `Sheet fetch failed: HTTP ${r.status}`,
+        });
+        text = "";
+      }
+    } catch (e) {
+      fetchMeta = { url: null, status: null, ok: false };
+      summary.errors.push({
+        row: "(fetch)",
+        error: `Sheet fetch threw: ${String((e && e.message) || e)}`,
+      });
+      text = "";
+    }
   }
+
+  // Compute fetch debug. Header line + last non-blank line let the operator
+  // confirm the CSV reached the worker fresh, including the trailing row
+  // that has no newline.
+  const csvByteLength = text ? text.length : 0;
+  let headerLine = "";
+  let lastDataLine = "";
+  if (csvByteLength) {
+    const nl = text.indexOf("\n");
+    headerLine = (nl >= 0 ? text.slice(0, nl) : text).replace(/\r$/, "");
+    // Find last non-blank line
+    let end = text.length;
+    while (end > 0 && (text[end - 1] === "\n" || text[end - 1] === "\r")) end--;
+    let start = end;
+    while (start > 0 && text[start - 1] !== "\n" && text[start - 1] !== "\r") start--;
+    lastDataLine = text.slice(start, end);
+    // Truncate aggressively to avoid leaking the full row in the response
+    if (lastDataLine.length > 160) lastDataLine = lastDataLine.slice(0, 160) + "…";
+    if (headerLine.length > 240) headerLine = headerLine.slice(0, 240) + "…";
+  }
+  summary.debug.fetch = {
+    url: fetchMeta.url,
+    status: fetchMeta.status,
+    ok: fetchMeta.ok,
+    csvByteLength,
+    headerLine,
+    lastDataLine,
+  };
+
   const rows = rowsToObjects(parseCsv(text));
   summary.rowsScanned = rows.length;
+
+  // Did the CSV that this sync actually saw contain Beckett's row?
+  summary.debug.sawBeckett = rows.some(r => {
+    const f = norm(r[COL.firstName]).toLowerCase();
+    const l = norm(r[COL.lastName]).toLowerCase();
+    return f === "beckett" || l === "jones";
+  });
 
   // Load existing players once so we can do in-memory dedup.
   let existing = [];
   if (env && env.DB) {
-    const { results } = await env.DB.prepare("SELECT * FROM players").all();
-    existing = (results || []).map(rowToPlayer);
+    try {
+      const { results } = await env.DB.prepare("SELECT * FROM players").all();
+      existing = (results || []).map(rowToPlayer);
+    } catch (e) {
+      summary.errors.push({
+        row: "(load-existing)",
+        error: `Loading existing players failed: ${String((e && e.message) || e)}`,
+      });
+    }
+  }
+  summary.debug.existingCount = existing.length;
+
+  function recordVerdict(candidate, verdict, extra = {}) {
+    const name = `${candidate.firstName} ${candidate.lastName}`.trim();
+    if (verdict === "duplicate" && summary.debug.duplicateNames.length < 50) {
+      summary.debug.duplicateNames.push({
+        form: name,
+        existing: extra.existingMatch || "(unknown)",
+      });
+    }
+    // Track the last two 2026 candidate names so the operator can confirm
+    // the latest sheet entry was actually reached by the loop.
+    summary.debug.lastTwo2026Names.push({ name, verdict });
+    if (summary.debug.lastTwo2026Names.length > 2) {
+      summary.debug.lastTwo2026Names.shift();
+    }
+    if (
+      candidate.firstName.toLowerCase() === "beckett" ||
+      candidate.lastName.toLowerCase() === "jones"
+    ) {
+      summary.debug.beckettCandidate = {
+        name,
+        birthdate: candidate.birthdate,
+        verdict,
+        ...extra,
+      };
+    }
   }
 
   for (const row of rows) {
@@ -250,21 +353,39 @@ export async function runSync(env, { csvText } = {}) {
       const candidate = mapRowToPlayer(row);
       if (!candidate.firstName && !candidate.lastName) {
         summary.errors.push({ row: row[COL.timestamp] || "(unknown)", error: "missing player name" });
+        recordVerdict(candidate, "missing-name");
         continue;
       }
-      if (existing.some(e => isDuplicate(candidate, e))) {
+      const dupMatch = existing.find(e => isDuplicate(candidate, e));
+      if (dupMatch) {
         summary.duplicates++;
+        recordVerdict(candidate, "duplicate", {
+          existingMatch: `${dupMatch.firstName} ${dupMatch.lastName} (${dupMatch.id})`.trim(),
+          dupOfId: dupMatch.id,
+        });
         continue;
       }
       if (env && env.DB) {
-        const id = await insertPlayer(env, candidate);
-        candidate.id = id;
+        try {
+          const id = await insertPlayer(env, candidate);
+          candidate.id = id;
+        } catch (e) {
+          summary.errors.push({
+            row: `${candidate.firstName} ${candidate.lastName}`.trim() || "(unknown)",
+            error: `Insert failed: ${String((e && e.message) || e)}`,
+          });
+          recordVerdict(candidate, "insert-error", {
+            error: String((e && e.message) || e),
+          });
+          continue;
+        }
       }
       existing.push(candidate);
       summary.inserted++;
       summary.insertedNames.push(
         `${candidate.firstName} ${candidate.lastName}`.trim()
       );
+      recordVerdict(candidate, "inserted");
     } catch (e) {
       summary.errors.push({
         row: row[COL.timestamp] || "(unknown)",
