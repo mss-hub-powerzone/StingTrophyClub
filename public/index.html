@@ -218,6 +218,10 @@ html[data-theme="light"] .overlay{background:rgba(0,0,0,.25)}
             <option value="committed">Committed</option>
           </select>
         </div>
+        <label style="display:flex;gap:8px;align-items:center;cursor:pointer;padding:6px 2px" title="Declined players are hidden by default so bulk emails never go to them. Pick 'Declined' from the Status dropdown to review them.">
+          <input id="hideDeclined" type="checkbox" checked style="width:18px;height:18px;accent-color:var(--primary)">
+          <span class="small" style="color:var(--text)">Hide declined players</span>
+        </label>
       </div>
       <div style="margin-top:20px" class="small">CSV players imported: 22 player rows after excluding staff entries; tryout prospects added: 15. Edit status, position and notes from the player drawer, and delete players there as well.</div>
     </aside>
@@ -234,6 +238,8 @@ html[data-theme="light"] .overlay{background:rgba(0,0,0,.25)}
           <option value="status">Sort: Status</option>
         </select>
       </div>
+
+      <div id="declinedInfo" class="small" style="margin:0 0 10px;display:none"></div>
 
       <div class="bulkbar" id="bulkbar">
         <span class="small"><span class="selcount" id="selCount">0</span> selected</span>
@@ -280,6 +286,16 @@ function esc(v) { return String(v ?? '').replace(/&/g, '&amp;').replace(/"/g, '&
 function fmt(d) { if (!d) return '—'; const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d); const x = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(d); return isNaN(x) ? d : x.toLocaleDateString(); }
 function bucket(d) { if (!d) return 'Outside Range'; if (d >= '2009-08-01' && d <= '2010-07-31') return 'U17'; if (d >= '2010-08-01' && d <= '2011-07-31') return 'U16'; return 'Outside Range'; }
 function full(p) { return (p.firstName + ' ' + p.lastName).trim(); }
+// Normalize a status value for case/whitespace-insensitive comparison.
+function normStatus(s) { return String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, ' '); }
+function isDeclined(p) { return normStatus(p && p.status) === 'declined'; }
+// Active = a player who should appear in bulk email recipients by default.
+// Anything not declined counts as active for safety (committed, offer sent,
+// prospect, evaluating, waitlist, blank). Per requirements, the canonical
+// active set is committed/offer sent/prospect, but treating everything
+// non-declined as "not-suppressed" is safer than silently dropping rows
+// with unusual or future statuses.
+function isActiveForBulk(p) { return !isDeclined(p); }
 
 function setStatus(msg, kind) {
   const el = $('#stcStatus'); if (!el) return;
@@ -410,18 +426,31 @@ function tabs() {
   document.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { currentTeam = b.dataset.t; render(); });
 }
 
+function hideDeclinedEnabled() {
+  const el = $('#hideDeclined');
+  // Default ON if the control isn't in the DOM yet (early call paths).
+  return el ? !!el.checked : true;
+}
+
 function filtered() {
   const q = ($('#search').value + ' ' + $('#quickSearch').value).toLowerCase();
   const st = $('#status').value, pos = $('#position').value, pt = $('#ptype').value, quick = $('#quick').value, sort = $('#sort').value;
+  const stNorm = normStatus(st);
+  const hideDeclined = hideDeclinedEnabled();
+  // Respect explicit user intent: if they pick "Declined" in the Status
+  // dropdown, surface those players for review even when the global
+  // "Hide declined" toggle is on.
+  const userWantsDeclined = stNorm === 'declined';
   let r = players.filter(p => {
     const b = p.teamBucket === 'Outside Range' ? 'outside' : p.teamBucket;
     if (currentTeam !== 'all' && b !== currentTeam) return false;
-    if (st !== 'all' && p.status !== st) return false;
+    if (st !== 'all' && normStatus(p.status) !== stNorm) return false;
     if (pos !== 'all' && (p.position || '') !== pos) return false;
     if (pt !== 'all' && p.playerType !== pt) return false;
     if (quick === 'followup' && !p.followUp) return false;
-    if (quick === 'offer' && p.status !== 'Offer Sent') return false;
-    if (quick === 'committed' && p.status !== 'Committed') return false;
+    if (quick === 'offer' && normStatus(p.status) !== 'offer sent') return false;
+    if (quick === 'committed' && normStatus(p.status) !== 'committed') return false;
+    if (hideDeclined && !userWantsDeclined && isDeclined(p)) return false;
     if (q && !([full(p), p.school, p.club, p.position, p.email, p.phone, p.contact1Name, p.contact1Phone, p.contact1Email, p.contact2Name, p.contact2Phone, p.contact2Email, p.notes].join(' ').toLowerCase().includes(q))) return false;
     return true;
   });
@@ -958,6 +987,32 @@ function render() {
   table(rows);
   cardsList(rows);
   updateSelCount();
+  renderDeclinedInfo(rows);
+}
+
+function renderDeclinedInfo(rows) {
+  const el = $('#declinedInfo');
+  if (!el) return;
+  const declinedTotal = players.filter(isDeclined).length;
+  const hiding = hideDeclinedEnabled();
+  const st = ($('#status') && $('#status').value) || 'all';
+  const userWantsDeclined = normStatus(st) === 'declined';
+  if (!declinedTotal) { el.style.display = 'none'; el.textContent = ''; return; }
+  if (hiding && !userWantsDeclined) {
+    const noun = declinedTotal === 1 ? 'declined player' : 'declined players';
+    if (rows.length === 0) {
+      el.innerHTML = `No matching players. <strong>${declinedTotal} ${noun}</strong> are hidden — uncheck "Hide declined players" or set Status to "Declined" to review them.`;
+    } else {
+      el.innerHTML = `Hiding <strong>${declinedTotal} ${noun}</strong> from bulk email selection. Uncheck "Hide declined players" or set Status to "Declined" to review them.`;
+    }
+    el.style.display = '';
+  } else if (userWantsDeclined) {
+    el.innerHTML = `Showing declined players (Status filter). They will be included in Select visible / bulk email if selected.`;
+    el.style.display = '';
+  } else {
+    el.innerHTML = `"Hide declined players" is off — declined players are visible and selectable.`;
+    el.style.display = '';
+  }
 }
 
 function closeDrawer() { $('#drawer').classList.remove('open'); $('#overlay').classList.remove('show'); }
@@ -1061,6 +1116,32 @@ $('#clearSelection').onclick = clearSelection;
 $('#emailSelected').onclick = emailSelected;
 $('#copyEmails').onclick = copyEmails;
 $('#offerEmail').onclick = openOfferModal;
+// Hide-declined toggle: persist preference and prune currently-selected
+// declined players when re-enabled, so users can never accidentally bulk
+// email a declined player after flipping the switch back on.
+(function initHideDeclined() {
+  const el = $('#hideDeclined');
+  if (!el) return;
+  try {
+    const saved = localStorage.getItem('stc_hide_declined');
+    // Default ON; only explicit '0' turns it off.
+    el.checked = saved === '0' ? false : true;
+  } catch (e) { el.checked = true; }
+  el.addEventListener('change', () => {
+    try { localStorage.setItem('stc_hide_declined', el.checked ? '1' : '0'); } catch (e) {}
+    if (el.checked) {
+      // Drop any currently-selected declined players from the selection set.
+      let dropped = 0;
+      for (const id of [...selectedIds]) {
+        const p = players.find(x => x.id === id);
+        if (p && isDeclined(p)) { selectedIds.delete(id); dropped++; }
+      }
+      if (dropped) setStatus(`Removed ${dropped} declined player${dropped === 1 ? '' : 's'} from selection.`, 'ok');
+    }
+    render();
+  });
+})();
+
 $('#selectAllVisibleHeader').addEventListener('change', e => {
   if (e.target.checked) selectVisible();
   else clearSelection();
@@ -1113,6 +1194,8 @@ async function syncGoogleForm() {
 // Expose select utilities for test/inspection (no-op for users)
 window.__stc = {
   extractEmails, buildMailto, selectedIds, selectVisible, clearSelection,
+  // Declined-suppression helpers (exposed for inspection/testing)
+  isDeclined, isActiveForBulk, normStatus, filtered, hideDeclinedEnabled,
   // Offer email helpers (exposed for inspection/testing)
   OFFER_TEMPLATES, TEMPLATE_VARIABLES, resolveTeamKey, recipientEmails,
   buildTemplateContext, interpolate, buildOfferDraft, buildOutlookComposeUrl,
