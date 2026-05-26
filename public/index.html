@@ -46,6 +46,11 @@ button,input,select,textarea{font:inherit}
 .bulkbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:12px 14px;margin-bottom:14px;border:1px solid var(--border);border-radius:16px;background:rgba(23,23,21,.92)}
 .bulkbar .selcount{font-weight:700}
 .bulkbar .small{margin-right:auto}
+.declined-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:.02em;background:rgba(200,106,159,.18);color:#e79ac2;border:1px solid rgba(200,106,159,.35)}
+.declined-badge[hidden]{display:none}
+.declined-badge::before{content:"";width:6px;height:6px;border-radius:50%;background:#e79ac2}
+.declined-badge.review{background:rgba(214,145,50,.18);color:#f0b860;border-color:rgba(214,145,50,.35)}
+.declined-badge.review::before{background:#f0b860}
 table{width:100%;border-collapse:collapse}
 th,td{padding:14px;border-bottom:1px solid #28261f;text-align:left;vertical-align:top}
 th{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);background:#171715;position:sticky;top:0;z-index:1}
@@ -243,6 +248,7 @@ html[data-theme="light"] .overlay{background:rgba(0,0,0,.25)}
 
       <div class="bulkbar" id="bulkbar">
         <span class="small"><span class="selcount" id="selCount">0</span> selected</span>
+        <span id="declinedBadge" class="declined-badge" role="status" aria-live="polite" hidden></span>
         <button class="btn" id="selectVisible" type="button">Select visible</button>
         <button class="btn" id="clearSelection" type="button">Clear</button>
         <button class="btn primary" id="emailSelected" type="button">Email selected (BCC)</button>
@@ -1012,32 +1018,63 @@ function render() {
   table(rows);
   cardsList(rows);
   updateSelCount();
-  renderDeclinedInfo(rows);
+  renderDeclinedState(rows);
 }
 
-function renderDeclinedInfo(rows) {
-  const el = $('#declinedInfo');
-  if (!el) return;
+// Compute the user-facing declined state once and update both the
+// quick-glance badge (next to Select visible) and the optional empty-state
+// line. Returns the state object for testing.
+function computeDeclinedState() {
   const declinedTotal = players.filter(isDeclined).length;
   const hiding = hideDeclinedEnabled();
   const st = ($('#status') && $('#status').value) || 'all';
   const userWantsDeclined = normStatus(st) === 'declined';
-  if (!declinedTotal) { el.style.display = 'none'; el.textContent = ''; return; }
-  if (hiding && !userWantsDeclined) {
-    const noun = declinedTotal === 1 ? 'declined player' : 'declined players';
-    if (rows.length === 0) {
-      el.innerHTML = `No matching players. <strong>${declinedTotal} ${noun}</strong> are hidden — uncheck "Hide declined players" or set Status to "Declined" to review them.`;
+  let kind;
+  if (!declinedTotal) kind = 'none';
+  else if (hiding && !userWantsDeclined) kind = 'hidden';
+  else if (userWantsDeclined) kind = 'review';
+  else kind = 'visible';
+  return { kind, declinedTotal, hiding, userWantsDeclined };
+}
+
+function renderDeclinedState(rows) {
+  const state = computeDeclinedState();
+  const { kind, declinedTotal } = state;
+  const noun = declinedTotal === 1 ? 'declined player' : 'declined players';
+
+  // Quick-glance badge next to Select visible / bulk email controls.
+  const badge = $('#declinedBadge');
+  if (badge) {
+    badge.classList.remove('review');
+    if (kind === 'hidden') {
+      badge.textContent = declinedTotal === 1 ? '1 declined hidden' : `${declinedTotal} declined hidden`;
+      badge.title = `${declinedTotal} ${noun} excluded from Select visible / bulk email. Uncheck "Hide declined players" or set Status to "Declined" to review them.`;
+      badge.hidden = false;
+    } else if (kind === 'review') {
+      badge.textContent = declinedTotal === 1 ? '1 declined shown' : `${declinedTotal} declined shown`;
+      badge.title = 'Status filter is set to Declined. These players will be included in Select visible / bulk email if selected.';
+      badge.classList.add('review');
+      badge.hidden = false;
     } else {
-      el.innerHTML = `Hiding <strong>${declinedTotal} ${noun}</strong> from bulk email selection. Uncheck "Hide declined players" or set Status to "Declined" to review them.`;
+      badge.textContent = '';
+      badge.title = '';
+      badge.hidden = true;
     }
-    el.style.display = '';
-  } else if (userWantsDeclined) {
-    el.innerHTML = `Showing declined players (Status filter). They will be included in Select visible / bulk email if selected.`;
-    el.style.display = '';
-  } else {
-    el.innerHTML = `"Hide declined players" is off — declined players are visible and selectable.`;
-    el.style.display = '';
   }
+
+  // Optional secondary line: only surface for the empty-state case to keep
+  // the bar uncluttered. The badge alone covers the common "hidden" state.
+  const el = $('#declinedInfo');
+  if (el) {
+    if (kind === 'hidden' && rows.length === 0) {
+      el.innerHTML = `No matching players. <strong>${declinedTotal} ${noun}</strong> are hidden — uncheck "Hide declined players" or set Status to "Declined" to review them.`;
+      el.style.display = '';
+    } else {
+      el.style.display = 'none';
+      el.textContent = '';
+    }
+  }
+  return state;
 }
 
 function closeDrawer() { $('#drawer').classList.remove('open'); $('#overlay').classList.remove('show'); }
@@ -1221,6 +1258,7 @@ window.__stc = {
   extractEmails, buildMailto, selectedIds, selectVisible, clearSelection,
   // Declined-suppression helpers (exposed for inspection/testing)
   isDeclined, isActiveForBulk, normStatus, filtered, hideDeclinedEnabled,
+  computeDeclinedState,
   // Offer email helpers (exposed for inspection/testing)
   OFFER_TEMPLATES, TEMPLATE_VARIABLES, resolveTeamKey, recipientEmails,
   buildTemplateContext, interpolate, buildOfferDraft, buildOutlookComposeUrl,
