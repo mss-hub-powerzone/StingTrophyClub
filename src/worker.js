@@ -215,8 +215,9 @@ async function deletePlayer(request, env, id) {
 // ---------------------------------------------------------------------------
 
 async function uploadPhoto(request, env, id) {
-  const unauthorized = requireAdmin(request, env);
-  if (unauthorized) return unauthorized;
+  // Photo upload is intentionally PUBLIC — no admin token required.
+  // Any visitor can upload/replace a player headshot. All other write
+  // operations (edit fields, delete player, etc.) still require the token.
 
   if (!env.DB) return json({ error: "DB binding missing" }, { status: 500 });
   if (!env.PHOTOS) return json({ error: "R2 PHOTOS binding missing. Add [[r2_buckets]] with binding=PHOTOS in wrangler.toml and create the bucket." }, { status: 500 });
