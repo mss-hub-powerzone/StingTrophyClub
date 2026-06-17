@@ -30,6 +30,7 @@ export const COLUMNS = [
   ["contact2_email",  "contact2Email"],
   ["notes",           "notes"],
   ["team_override",   "teamOverride"],
+  ["photo_url",       "photoUrl"],
 ];
 
 const BOOL_FIELDS = new Set(["follow_up"]);

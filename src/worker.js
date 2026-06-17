@@ -86,7 +86,7 @@ async function getPlayer(env, id) {
 // "no such column" error we strip these and retry, so the rest of the
 // fields still save and the operator gets a clear warning instead of a
 // bare 500.
-const POST_INIT_COLUMNS = ["team_override"];
+const POST_INIT_COLUMNS = ["team_override", "photo_url"];
 
 function isMissingColumnError(err) {
   const msg = String((err && err.message) || err || "").toLowerCase();
@@ -197,6 +197,91 @@ async function deletePlayer(request, env, id) {
   return json({ ok: true, id });
 }
 
+// ---------------------------------------------------------------------------
+// Photo upload / delete
+// ---------------------------------------------------------------------------
+// Accepts a raw image blob (JPEG or PNG) up to 4 MB, stores it in the PHOTOS
+// R2 bucket as "headshots/<player-id>.jpg", and writes the public URL back to
+// the player's photo_url column in D1.
+//
+// Setup required in wrangler.toml:
+//   [[r2_buckets]]
+//   binding = "PHOTOS"
+//   bucket_name = "stingtrophyclub-photos"
+//   preview_bucket_name = "stingtrophyclub-photos-dev"
+//
+// The bucket must also have a custom domain or public URL configured in the
+// Cloudflare dashboard so images are served publicly.
+// ---------------------------------------------------------------------------
+
+async function uploadPhoto(request, env, id) {
+  const unauthorized = requireAdmin(request, env);
+  if (unauthorized) return unauthorized;
+
+  if (!env.DB) return json({ error: "DB binding missing" }, { status: 500 });
+  if (!env.PHOTOS) return json({ error: "R2 PHOTOS binding missing. Add [[r2_buckets]] with binding=PHOTOS in wrangler.toml and create the bucket." }, { status: 500 });
+
+  const existing = await loadPlayer(env, id);
+  if (!existing) return json({ error: "Player not found" }, { status: 404 });
+
+  const contentType = request.headers.get("content-type") || "";
+  if (!contentType.startsWith("image/")) {
+    return json({ error: "Content-Type must be an image/* type" }, { status: 400 });
+  }
+
+  const blob = await request.arrayBuffer();
+  if (blob.byteLength > 4 * 1024 * 1024) {
+    return json({ error: "Image too large (max 4 MB)" }, { status: 413 });
+  }
+
+  // Determine extension from content-type (jpeg → .jpg, png → .png, webp → .webp)
+  const ext = contentType.includes("png") ? "png" : contentType.includes("webp") ? "webp" : "jpg";
+  const key = `headshots/${id}.${ext}`;
+
+  await env.PHOTOS.put(key, blob, {
+    httpMetadata: { contentType },
+    customMetadata: { playerId: id },
+  });
+
+  // Build the public URL. If a PHOTOS_BASE_URL env var is set, use it.
+  // Otherwise fall back to the R2 public bucket URL pattern.
+  const base = (env.PHOTOS_BASE_URL || "").replace(/\/$/, "");
+  const photoUrl = base ? `${base}/${key}` : `https://pub-placeholder.r2.dev/${key}`;
+
+  await env.DB.prepare(
+    "UPDATE players SET photo_url = ?, updated_at = datetime('now') WHERE id = ?"
+  ).bind(photoUrl, id).run();
+
+  const row = await loadPlayer(env, id);
+  return json({ player: rowToPlayer(row), photoUrl });
+}
+
+async function deletePhoto(request, env, id) {
+  const unauthorized = requireAdmin(request, env);
+  if (unauthorized) return unauthorized;
+
+  if (!env.DB) return json({ error: "DB binding missing" }, { status: 500 });
+
+  const existing = await loadPlayer(env, id);
+  if (!existing) return json({ error: "Player not found" }, { status: 404 });
+
+  // Delete all possible extensions from R2
+  if (env.PHOTOS) {
+    await Promise.allSettled([
+      env.PHOTOS.delete(`headshots/${id}.jpg`),
+      env.PHOTOS.delete(`headshots/${id}.png`),
+      env.PHOTOS.delete(`headshots/${id}.webp`),
+    ]);
+  }
+
+  await env.DB.prepare(
+    "UPDATE players SET photo_url = '', updated_at = datetime('now') WHERE id = ?"
+  ).bind(id).run();
+
+  const row = await loadPlayer(env, id);
+  return json({ player: rowToPlayer(row) });
+}
+
 async function handleApi(request, env, url) {
   const path = url.pathname;
   const method = request.method.toUpperCase();
@@ -216,6 +301,18 @@ async function handleApi(request, env, url) {
       return new Response(null, { status: 204, headers: { allow: "GET, POST, OPTIONS" } });
     }
     return json({ error: "Method not allowed" }, { status: 405, headers: { allow: "GET, POST, OPTIONS" } });
+  }
+
+  // Photo upload: PUT /api/players/:id/photo
+  const mPhoto = /^\/api\/players\/([^/]+)\/photo\/?$/.exec(path);
+  if (mPhoto) {
+    const id = decodeURIComponent(mPhoto[1]);
+    if (method === "PUT") return uploadPhoto(request, env, id);
+    if (method === "DELETE") return deletePhoto(request, env, id);
+    if (method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: { allow: "PUT, DELETE, OPTIONS" } });
+    }
+    return json({ error: "Method not allowed" }, { status: 405, headers: { allow: "PUT, DELETE, OPTIONS" } });
   }
 
   const m = /^\/api\/players\/([^/]+)\/?$/.exec(path);

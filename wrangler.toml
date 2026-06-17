@@ -28,3 +28,16 @@ binding = "DB"
 database_name = "stingtrophyclub"
 database_id = "47a4f214-ec53-4ea9-9abc-fb892f6c4a29"
 migrations_dir = "migrations"
+
+# R2 bucket for player headshot photos.
+# Setup steps:
+#   1. Create the bucket:  wrangler r2 bucket create stingtrophyclub-photos
+#   2. Enable public access in the Cloudflare dashboard (R2 > bucket > Settings
+#      > Public Access), then copy the public URL and set:
+#         wrangler secret put PHOTOS_BASE_URL
+#      (paste the URL, e.g. https://pub-abc123.r2.dev)
+#   3. Deploy:  wrangler deploy
+[[r2_buckets]]
+binding = "PHOTOS"
+bucket_name = "stingtrophyclub-photos"
+preview_bucket_name = "stingtrophyclub-photos-dev"

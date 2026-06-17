@@ -191,6 +191,35 @@ html[data-theme="light"] td{border-bottom:1px solid #e3ddcf}
 html[data-theme="light"] tr.is-selected{background:rgba(103,183,201,.14)}
 html[data-theme="light"] .drawer{background:#fbf7ee}
 html[data-theme="light"] .overlay{background:rgba(0,0,0,.25)}
+
+/* ---- Headshot styles ---- */
+.hs-thumb{width:44px;height:44px;border-radius:50%;object-fit:cover;border:2px solid var(--border);background:var(--surface2);flex-shrink:0;cursor:pointer;display:block}
+.hs-thumb.hs-empty{display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--muted);text-decoration:none}
+.hs-thumb-lg{width:80px;height:80px;border-radius:12px;object-fit:cover;border:2px solid var(--border);background:var(--surface2);cursor:pointer;display:block}
+.hs-thumb-lg.hs-empty{display:flex;align-items:center;justify-content:center;font-size:28px;color:var(--muted);text-decoration:none}
+.hs-wrap{position:relative;display:inline-block}
+.hs-wrap .hs-edit-badge{position:absolute;bottom:-4px;right:-4px;width:18px;height:18px;border-radius:50%;background:var(--primary);color:#102229;font-size:11px;display:flex;align-items:center;justify-content:center;pointer-events:none;border:2px solid var(--bg)}
+
+/* ---- Crop modal ---- */
+.crop-modal-wrap{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.7);padding:16px}
+.crop-modal{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:18px;width:min(560px,100%);max-height:92vh;display:flex;flex-direction:column;gap:14px;box-shadow:0 12px 48px rgba(0,0,0,.6)}
+.crop-modal h3{margin:0;font-size:18px}
+.crop-modal .crop-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.crop-modal .crop-canvas-wrap{position:relative;width:100%;aspect-ratio:1/1;max-height:340px;overflow:hidden;border-radius:12px;border:1px solid var(--border);background:#222}
+.crop-modal .crop-canvas-wrap img{display:block;max-width:100%;max-height:100%}
+.crop-modal .crop-controls{display:flex;flex-direction:column;gap:10px}
+.crop-modal .crop-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.crop-modal .crop-row label{font-size:13px;color:var(--muted);white-space:nowrap;min-width:90px}
+.crop-modal .crop-row input[type=range]{flex:1;min-width:120px;accent-color:var(--primary)}
+.crop-modal .crop-row input[type=color]{width:44px;height:36px;border-radius:10px;border:1px solid var(--border);background:none;cursor:pointer;padding:2px}
+.crop-modal .crop-foot{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.crop-modal .drop-zone{border:2px dashed var(--border);border-radius:12px;padding:32px 16px;text-align:center;color:var(--muted);cursor:pointer;transition:border-color .15s,background .15s}
+.crop-modal .drop-zone:hover,.crop-modal .drop-zone.drag-over{border-color:var(--primary);background:rgba(103,183,201,.06)}
+.crop-modal .drop-zone p{margin:0;font-size:14px}
+.crop-modal .drop-zone .drop-hint{font-size:12px;margin-top:6px}
+.crop-modal .saving-spinner{display:none;font-size:13px;color:var(--muted)}
+.crop-modal .saving-spinner.show{display:inline}
+html[data-theme="light"] .crop-modal{background:#fff}
 </style>
 </head>
 <body>
@@ -328,6 +357,66 @@ html[data-theme="light"] .overlay{background:rgba(0,0,0,.25)}
 
 <div class="overlay" id="overlay"></div>
 <div class="drawer" id="drawer"></div>
+
+<!-- Headshot crop modal (hidden until openCropModal is called) -->
+<div class="crop-modal-wrap" id="cropModalWrap" style="display:none" role="dialog" aria-modal="true" aria-label="Edit headshot">
+  <div class="crop-modal">
+    <div class="crop-head">
+      <h3 id="cropModalTitle">Player Headshot</h3>
+      <button class="btn" id="cropClose" type="button">Close</button>
+    </div>
+
+    <!-- Drop zone (shown when no image loaded) -->
+    <div class="drop-zone" id="cropDropZone">
+      <p>Drop a photo here or click to choose</p>
+      <div class="drop-hint">JPEG, PNG, or WebP · max 10 MB · shoulders &amp; above</div>
+      <input type="file" id="cropFileInput" accept="image/jpeg,image/png,image/webp" style="display:none">
+    </div>
+
+    <!-- Crop canvas (shown once image loaded) -->
+    <div class="crop-canvas-wrap" id="cropCanvasWrap" style="display:none">
+      <img id="cropImg" alt="">
+    </div>
+
+    <!-- Controls (shown once image loaded) -->
+    <div class="crop-controls" id="cropControls" style="display:none">
+      <div class="crop-row">
+        <label for="cropZoom">Zoom</label>
+        <input type="range" id="cropZoom" min="0.1" max="3" step="0.01" value="1">
+      </div>
+      <div class="crop-row">
+        <label for="cropRotate">Rotate</label>
+        <input type="range" id="cropRotate" min="-180" max="180" step="1" value="0">
+        <button class="btn" id="cropRotLeft" type="button" title="Rotate -90°">↺ 90°</button>
+        <button class="btn" id="cropRotRight" type="button" title="Rotate +90°">↻ 90°</button>
+      </div>
+      <div class="crop-row">
+        <label for="cropBgColor">Background</label>
+        <input type="color" id="cropBgColor" value="#1a3a4a" title="Background fill color">
+        <span class="small" style="flex:1">Fills behind player for a consistent look</span>
+      </div>
+    </div>
+
+    <!-- Preview + footer -->
+    <div id="cropPreviewRow" style="display:none;gap:12px;align-items:center">
+      <div style="flex-shrink:0">
+        <div class="label" style="margin-bottom:4px">Preview</div>
+        <canvas id="cropPreviewCanvas" width="100" height="100" style="border-radius:8px;border:1px solid var(--border);display:block"></canvas>
+      </div>
+      <div style="flex:1;font-size:13px;color:var(--muted)">Preview updates as you adjust. Saved at 400×400 px.</div>
+    </div>
+
+    <div class="crop-foot">
+      <button class="btn" id="cropNewPhoto" type="button" style="display:none">Choose different photo</button>
+      <span class="saving-spinner" id="cropSpinner">Saving…</span>
+      <button class="btn" id="cropDelete" type="button" style="color:#e79ac2;border-color:#7a415f;display:none">Remove photo</button>
+      <button class="btn primary" id="cropSave" type="button" style="display:none">Save headshot</button>
+    </div>
+  </div>
+</div>
+
+<!-- Cropper.js (MIT) -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css">
 
 <script>
 const API_BASE = '/api/players';
@@ -537,7 +626,7 @@ function table(rows) {
   $('#tbody').innerHTML = rows.map(p => `
     <tr data-id="${esc(p.id)}" class="${selectedIds.has(p.id) ? 'is-selected' : ''}">
       <td><input type="checkbox" class="rowsel" data-sel="${esc(p.id)}" ${selectedIds.has(p.id) ? 'checked' : ''}></td>
-      <td><strong>${esc(full(p))}</strong><div class="small">${p.playerType === 'prospect' ? 'Potential new player' : 'Current roster/imported'}</div></td>
+      <td style="display:flex;gap:10px;align-items:center">${p.photoUrl ? `<img class="hs-thumb" src="${esc(p.photoUrl)}" alt="" data-hs-id="${esc(p.id)}" data-hs-name="${esc(full(p))}" title="Edit headshot">` : `<span class="hs-thumb hs-empty" data-hs-id="${esc(p.id)}" data-hs-name="${esc(full(p))}" title="Add headshot">👤</span>`}<div><strong>${esc(full(p))}</strong><div class="small">${p.playerType === 'prospect' ? 'Potential new player' : 'Current roster/imported'}</div></div></td>
       <td>${esc(p.teamBucket || '')}${p.teamOverride ? ' <span class="manual-team-badge" title="Manual team override — pinned regardless of birthdate">Manual</span>' : ''}</td>
       <td><span class="badge ${statusClass(p.status)}">${esc(p.status || '')}</span></td>
       <td>${esc(p.position || '—')}</td>
@@ -565,6 +654,7 @@ function cardsList(rows) {
   $('#cards').innerHTML = rows.map(p => `
     <div class="pcard ${selectedIds.has(p.id) ? 'is-selected' : ''}" data-id="${esc(p.id)}">
       <div class="sel"><input type="checkbox" class="rowsel" data-sel="${esc(p.id)}" ${selectedIds.has(p.id) ? 'checked' : ''}></div>
+      <div class="hs-wrap" style="flex-shrink:0">${p.photoUrl ? `<img class="hs-thumb" src="${esc(p.photoUrl)}" alt="" data-hs-id="${esc(p.id)}" data-hs-name="${esc(full(p))}" title="Edit headshot"><span class="hs-edit-badge">✏️</span>` : `<span class="hs-thumb hs-empty" data-hs-id="${esc(p.id)}" data-hs-name="${esc(full(p))}" title="Add headshot">👤</span>`}</div>
       <div class="body">
         <div class="row">
           <div class="name">${esc(full(p))}</div>
@@ -1266,7 +1356,7 @@ function openDrawer(id) {
   selectedId = id;
   const p = players.find(x => x.id === id);
   if (!p) return;
-  $('#drawer').innerHTML = `<div style="display:flex;justify-content:space-between;gap:8px;align-items:start"><div><div class="label">Player detail</div><h2 style="margin:0 0 4px">${esc(full(p))}</h2><div class="small">${esc(p.teamLabel || '')} • ${esc(p.league || '')}${p.teamOverride ? ' • <span class="manual-team-badge">Manual team</span>' : ''}</div></div><button class="btn" id="close">Close</button></div><div class="stack" style="margin-top:16px"><div><div class="label">First name</div><input class="input" data-f="firstName" value="${esc(p.firstName || '')}"></div><div><div class="label">Last name</div><input class="input" data-f="lastName" value="${esc(p.lastName || '')}"></div><div><div class="label">Status</div><select class="select" data-f="status"><option ${p.status === 'Committed' ? 'selected' : ''}>Committed</option><option ${p.status === 'Offer Sent' ? 'selected' : ''}>Offer Sent</option><option ${p.status === 'Prospect' ? 'selected' : ''}>Prospect</option><option ${p.status === 'Evaluating' ? 'selected' : ''}>Evaluating</option><option ${p.status === 'Declined' ? 'selected' : ''}>Declined</option><option ${p.status === 'Waitlist' ? 'selected' : ''}>Waitlist</option></select></div><div><div class="label">Birthdate</div><input class="input" type="date" data-f="birthdate" value="${esc(p.birthdate || '')}"></div><div><div class="label" title="Pin this player to a team regardless of birthdate. Useful for players playing up or out-of-range players still on the roster.">Team (manual override)</div><select class="select" data-f="teamOverride"><option value="" ${!p.teamOverride ? 'selected' : ''}>Auto (by birthdate)</option><option value="U17" ${p.teamOverride === 'U17' ? 'selected' : ''}>U17 Boys • N1 • Jon Barber</option><option value="U16" ${p.teamOverride === 'U16' ? 'selected' : ''}>U16 Boys • ECNL RL NTX • Wayne Smith</option></select><div class="small" style="margin-top:4px">Auto routes by birthdate (U17 = Aug 2009–Jul 2010, U16 = Aug 2010–Jul 2011). Override pins the player to a team for the dashboard and offer email template.</div></div><div><div class="label">Position</div><input class="input" data-f="position" value="${esc(p.position || '')}"></div><div><div class="label">School</div><input class="input" data-f="school" value="${esc(p.school || '')}"></div><div><div class="label">Club</div><input class="input" data-f="club" value="${esc(p.club || '')}"></div><div><div class="label">Player type</div><select class="select" data-f="playerType"><option value="roster" ${p.playerType === 'roster' ? 'selected' : ''}>Current roster/imported</option><option value="prospect" ${p.playerType === 'prospect' ? 'selected' : ''}>Potential new player</option></select></div><div><div class="label">Offer sent date</div><input class="input" type="date" data-f="offerSent" value="${esc(p.offerSent || '')}"></div><div><div class="label">Commitment date</div><input class="input" type="date" data-f="commitmentDate" value="${esc(p.commitmentDate || '')}"></div><div><div class="label">Follow-up needed</div><select class="select" data-f="followUp"><option value="true" ${p.followUp ? 'selected' : ''}>Yes</option><option value="false" ${!p.followUp ? 'selected' : ''}>No</option></select></div><div><div class="label">Primary email (player)</div><input class="input" type="email" data-f="email" value="${esc(p.email || '')}" placeholder="player@example.com"></div><div><div class="label">Primary phone (player)</div><input class="input" type="tel" data-f="phone" value="${esc(p.phone || '')}" placeholder="(555) 123-4567"></div><div style="border-top:1px solid var(--border);margin-top:6px;padding-top:12px"><div class="label">Parent / Guardian 1</div><input class="input" data-f="contact1Name" value="${esc(p.contact1Name || '')}" placeholder="Name" style="margin-bottom:8px"><input class="input" type="tel" data-f="contact1Phone" value="${esc(p.contact1Phone || '')}" placeholder="Phone" style="margin-bottom:8px"><input class="input" type="email" data-f="contact1Email" value="${esc(p.contact1Email || '')}" placeholder="Email"></div><div><div class="label">Parent / Guardian 2</div><input class="input" data-f="contact2Name" value="${esc(p.contact2Name || '')}" placeholder="Name" style="margin-bottom:8px"><input class="input" type="tel" data-f="contact2Phone" value="${esc(p.contact2Phone || '')}" placeholder="Phone" style="margin-bottom:8px"><input class="input" type="email" data-f="contact2Email" value="${esc(p.contact2Email || '')}" placeholder="Email"></div><div><div class="label">Notes</div><textarea data-f="notes">${esc(p.notes || '')}</textarea></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="save">Save changes</button><button class="btn" id="del" style="color:#e79ac2;border-color:#7a415f">Delete player</button></div></div>`;
+  $('#drawer').innerHTML = `<div style="display:flex;justify-content:space-between;gap:8px;align-items:start"><div style="display:flex;gap:14px;align-items:flex-start"><div class="hs-wrap" style="flex-shrink:0;cursor:pointer" title="${p.photoUrl ? 'Edit headshot' : 'Add headshot'}">${p.photoUrl ? `<img class="hs-thumb-lg" id="drawerHsThumb" src="${esc(p.photoUrl)}" alt="" data-hs-id="${esc(p.id)}" data-hs-name="${esc(full(p))}"><span class="hs-edit-badge">✏️</span>` : `<span class="hs-thumb-lg hs-empty" id="drawerHsPh" data-hs-id="${esc(p.id)}" data-hs-name="${esc(full(p))}">&#128100;</span>`}</div><div><div class="label">Player detail</div><h2 style="margin:0 0 4px">${esc(full(p))}</h2><div class="small">${esc(p.teamLabel || '')} • ${esc(p.league || '')}${p.teamOverride ? ' • <span class="manual-team-badge">Manual team</span>' : ''}</div></div></div><button class="btn" id="close">Close</button></div><div class="stack" style="margin-top:16px"><div><div class="label">First name</div><input class="input" data-f="firstName" value="${esc(p.firstName || '')}"></div><div><div class="label">Last name</div><input class="input" data-f="lastName" value="${esc(p.lastName || '')}"></div><div><div class="label">Status</div><select class="select" data-f="status"><option ${p.status === 'Committed' ? 'selected' : ''}>Committed</option><option ${p.status === 'Offer Sent' ? 'selected' : ''}>Offer Sent</option><option ${p.status === 'Prospect' ? 'selected' : ''}>Prospect</option><option ${p.status === 'Evaluating' ? 'selected' : ''}>Evaluating</option><option ${p.status === 'Declined' ? 'selected' : ''}>Declined</option><option ${p.status === 'Waitlist' ? 'selected' : ''}>Waitlist</option></select></div><div><div class="label">Birthdate</div><input class="input" type="date" data-f="birthdate" value="${esc(p.birthdate || '')}"></div><div><div class="label" title="Pin this player to a team regardless of birthdate. Useful for players playing up or out-of-range players still on the roster.">Team (manual override)</div><select class="select" data-f="teamOverride"><option value="" ${!p.teamOverride ? 'selected' : ''}>Auto (by birthdate)</option><option value="U17" ${p.teamOverride === 'U17' ? 'selected' : ''}>U17 Boys • N1 • Jon Barber</option><option value="U16" ${p.teamOverride === 'U16' ? 'selected' : ''}>U16 Boys • ECNL RL NTX • Wayne Smith</option></select><div class="small" style="margin-top:4px">Auto routes by birthdate (U17 = Aug 2009–Jul 2010, U16 = Aug 2010–Jul 2011). Override pins the player to a team for the dashboard and offer email template.</div></div><div><div class="label">Position</div><input class="input" data-f="position" value="${esc(p.position || '')}"></div><div><div class="label">School</div><input class="input" data-f="school" value="${esc(p.school || '')}"></div><div><div class="label">Club</div><input class="input" data-f="club" value="${esc(p.club || '')}"></div><div><div class="label">Player type</div><select class="select" data-f="playerType"><option value="roster" ${p.playerType === 'roster' ? 'selected' : ''}>Current roster/imported</option><option value="prospect" ${p.playerType === 'prospect' ? 'selected' : ''}>Potential new player</option></select></div><div><div class="label">Offer sent date</div><input class="input" type="date" data-f="offerSent" value="${esc(p.offerSent || '')}"></div><div><div class="label">Commitment date</div><input class="input" type="date" data-f="commitmentDate" value="${esc(p.commitmentDate || '')}"></div><div><div class="label">Follow-up needed</div><select class="select" data-f="followUp"><option value="true" ${p.followUp ? 'selected' : ''}>Yes</option><option value="false" ${!p.followUp ? 'selected' : ''}>No</option></select></div><div><div class="label">Primary email (player)</div><input class="input" type="email" data-f="email" value="${esc(p.email || '')}" placeholder="player@example.com"></div><div><div class="label">Primary phone (player)</div><input class="input" type="tel" data-f="phone" value="${esc(p.phone || '')}" placeholder="(555) 123-4567"></div><div style="border-top:1px solid var(--border);margin-top:6px;padding-top:12px"><div class="label">Parent / Guardian 1</div><input class="input" data-f="contact1Name" value="${esc(p.contact1Name || '')}" placeholder="Name" style="margin-bottom:8px"><input class="input" type="tel" data-f="contact1Phone" value="${esc(p.contact1Phone || '')}" placeholder="Phone" style="margin-bottom:8px"><input class="input" type="email" data-f="contact1Email" value="${esc(p.contact1Email || '')}" placeholder="Email"></div><div><div class="label">Parent / Guardian 2</div><input class="input" data-f="contact2Name" value="${esc(p.contact2Name || '')}" placeholder="Name" style="margin-bottom:8px"><input class="input" type="tel" data-f="contact2Phone" value="${esc(p.contact2Phone || '')}" placeholder="Phone" style="margin-bottom:8px"><input class="input" type="email" data-f="contact2Email" value="${esc(p.contact2Email || '')}" placeholder="Email"></div><div><div class="label">Notes</div><textarea data-f="notes">${esc(p.notes || '')}</textarea></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="save">Save changes</button><button class="btn" id="del" style="color:#e79ac2;border-color:#7a415f">Delete player</button></div></div>`;
   $('#drawer').classList.add('open');
   $('#overlay').classList.add('show');
   $('#close').onclick = closeDrawer;
@@ -1568,6 +1658,238 @@ window.__stc = {
   EMAIL_CLIENTS, OFFER_PDFS, defaultEmailClient,
   openOfferModal,
 };
+
+
+// ===========================================================================
+// HEADSHOT CROP MODAL
+// ===========================================================================
+(function initHeadshotModal() {
+  let cropperLoaded = false;
+  function loadCropperJs(cb) {
+    if (cropperLoaded) { cb(); return; }
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js';
+    s.onload = () => { cropperLoaded = true; cb(); };
+    document.head.appendChild(s);
+  }
+
+  let currentPlayerId = null;
+  let currentPlayerName = '';
+  let cropper = null;
+  let previewRafId = null;
+
+  const $ = id => document.getElementById(id);
+
+  window.openCropModal = function(playerId, playerName, hasPhoto) {
+    currentPlayerId   = playerId;
+    currentPlayerName = playerName;
+    $('cropModalTitle').textContent = 'Headshot \u2014 ' + playerName;
+    showDropZone();
+    $('cropDelete').style.display = hasPhoto ? 'inline-block' : 'none';
+    $('cropModalWrap').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    loadCropperJs(() => {});
+  };
+
+  function showDropZone() {
+    $('cropDropZone').style.display = '';
+    $('cropCanvasWrap').style.display = 'none';
+    $('cropControls').style.display = 'none';
+    $('cropPreviewRow').style.display = 'none';
+    $('cropSave').style.display = 'none';
+    $('cropNewPhoto').style.display = 'none';
+    $('cropSpinner').classList.remove('show');
+    destroyCropper();
+  }
+
+  function showEditor(dataUrl) {
+    $('cropDropZone').style.display = 'none';
+    $('cropCanvasWrap').style.display = '';
+    $('cropControls').style.display = '';
+    $('cropPreviewRow').style.display = 'flex';
+    $('cropSave').style.display = 'inline-block';
+    $('cropNewPhoto').style.display = 'inline-block';
+    $('cropZoom').value = 1;
+    $('cropRotate').value = 0;
+    destroyCropper();
+    const img = $('cropImg');
+    img.src = dataUrl;
+    img.onload = () => {
+      cropper = new Cropper(img, {
+        aspectRatio: 1,
+        viewMode: 1,
+        dragMode: 'move',
+        autoCropArea: 0.85,
+        restore: false,
+        guides: true,
+        center: true,
+        highlight: false,
+        cropBoxMovable: false,
+        cropBoxResizable: false,
+        toggleDragModeOnDblclick: false,
+        ready() { schedulePreview(); },
+        crop()  { schedulePreview(); },
+      });
+    };
+  }
+
+  function destroyCropper() {
+    if (cropper) { cropper.destroy(); cropper = null; }
+    if (previewRafId) { cancelAnimationFrame(previewRafId); previewRafId = null; }
+  }
+
+  function onZoom() { if (cropper) cropper.zoomTo(parseFloat($('cropZoom').value)); }
+  function onRotate() { if (cropper) { cropper.rotateTo(parseInt($('cropRotate').value, 10)); schedulePreview(); } }
+  function schedulePreview() {
+    if (previewRafId) cancelAnimationFrame(previewRafId);
+    previewRafId = requestAnimationFrame(drawPreview);
+  }
+  function drawPreview() {
+    previewRafId = null;
+    if (!cropper) return;
+    const SIZE = 100;
+    const pc = $('cropPreviewCanvas');
+    const ctx = pc.getContext('2d');
+    const bg = $('cropBgColor').value || '#1a3a4a';
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, SIZE, SIZE);
+    try {
+      ctx.drawImage(cropper.getCroppedCanvas({ width: SIZE, height: SIZE, fillColor: bg }), 0, 0, SIZE, SIZE);
+    } catch(e) {}
+  }
+
+  function loadFile(file) {
+    if (!file || !file.type.startsWith('image/')) { alert('Please choose a JPEG, PNG, or WebP image.'); return; }
+    if (file.size > 10 * 1024 * 1024) { alert('Image must be under 10 MB.'); return; }
+    const reader = new FileReader();
+    reader.onload = e => loadCropperJs(() => showEditor(e.target.result));
+    reader.readAsDataURL(file);
+  }
+
+  async function doSave() {
+    if (!cropper || !currentPlayerId) return;
+    const token = localStorage.getItem('stc_admin_token') || '';
+    if (!token) { alert('Admin token required. Enter it in the main toolbar first.'); return; }
+    $('cropSpinner').classList.add('show');
+    $('cropSave').disabled = true;
+    try {
+      const SIZE = 400;
+      const bg = $('cropBgColor').value || '#1a3a4a';
+      const out = document.createElement('canvas');
+      out.width = SIZE; out.height = SIZE;
+      const ctx = out.getContext('2d');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, SIZE, SIZE);
+      ctx.drawImage(cropper.getCroppedCanvas({ width: SIZE, height: SIZE, fillColor: bg }), 0, 0);
+      const blob = await new Promise(res => out.toBlob(res, 'image/jpeg', 0.92));
+      const res = await fetch(API_BASE + '/' + encodeURIComponent(currentPlayerId) + '/photo', {
+        method: 'PUT',
+        headers: { 'content-type': 'image/jpeg', 'authorization': 'Bearer ' + token },
+        body: blob,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      const idx = players.findIndex(p => p.id === currentPlayerId);
+      if (idx !== -1) players[idx] = data.player;
+      refreshHeadshotThumbs(currentPlayerId, data.player.photoUrl);
+      closeCropModal();
+    } catch(e) {
+      alert('Upload failed: ' + e.message);
+    } finally {
+      $('cropSpinner').classList.remove('show');
+      $('cropSave').disabled = false;
+    }
+  }
+
+  async function doDelete() {
+    if (!currentPlayerId) return;
+    if (!confirm("Remove this player's headshot?")) return;
+    const token = localStorage.getItem('stc_admin_token') || '';
+    if (!token) { alert('Admin token required.'); return; }
+    try {
+      const res = await fetch(API_BASE + '/' + encodeURIComponent(currentPlayerId) + '/photo', {
+        method: 'DELETE', headers: { 'authorization': 'Bearer ' + token },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      const idx = players.findIndex(p => p.id === currentPlayerId);
+      if (idx !== -1) players[idx] = data.player;
+      refreshHeadshotThumbs(currentPlayerId, '');
+      closeCropModal();
+    } catch(e) { alert('Delete failed: ' + e.message); }
+  }
+
+  function escAttr(v) { return String(v || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  function refreshHeadshotThumbs(id, url) {
+    document.querySelectorAll('[data-hs-id]').forEach(el => {
+      if (el.dataset.hsId !== id) return;
+      const name = el.dataset.hsName || '';
+      const isLg = el.classList.contains('hs-thumb-lg');
+      const cls = isLg ? 'hs-thumb-lg' : 'hs-thumb';
+      let html;
+      if (url) {
+        html = '<img class="' + cls + '" src="' + escAttr(url) + '" alt="" data-hs-id="' + escAttr(id) + '" data-hs-name="' + escAttr(name) + '" title="Edit headshot">';
+      } else {
+        html = '<span class="' + cls + ' hs-empty" data-hs-id="' + escAttr(id) + '" data-hs-name="' + escAttr(name) + '" title="Add headshot">\ud83d\udc64</span>';
+      }
+      el.outerHTML = html;
+    });
+  }
+
+  function closeCropModal() {
+    $('cropModalWrap').style.display = 'none';
+    document.body.style.overflow = '';
+    destroyCropper();
+    $('cropFileInput').value = '';
+  }
+
+  document.addEventListener('click', e => {
+    if (e.target.id === 'cropModalWrap')  { closeCropModal(); return; }
+    if (e.target.closest('#cropClose'))   { closeCropModal(); return; }
+    if (e.target.closest('#cropDropZone')){ $('cropFileInput').click(); return; }
+    if (e.target.closest('#cropNewPhoto')){ showDropZone(); return; }
+    if (e.target.closest('#cropSave'))    { doSave(); return; }
+    if (e.target.closest('#cropDelete'))  { doDelete(); return; }
+    if (e.target.closest('#cropRotLeft')) {
+      if (cropper) { const v = Math.max(-180, parseInt($('cropRotate').value,10) - 90); $('cropRotate').value = v; onRotate(); } return;
+    }
+    if (e.target.closest('#cropRotRight')){
+      if (cropper) { const v = Math.min(180, parseInt($('cropRotate').value,10) + 90); $('cropRotate').value = v; onRotate(); } return;
+    }
+    const thumb = e.target.closest('[data-hs-id]');
+    if (thumb) {
+      const pid  = thumb.dataset.hsId;
+      const name = thumb.dataset.hsName || pid;
+      const p    = players.find(x => x.id === pid);
+      openCropModal(pid, name, !!(p && p.photoUrl));
+    }
+  });
+
+  document.addEventListener('change', e => {
+    if (e.target.id === 'cropFileInput') loadFile(e.target.files[0]);
+    if (e.target.id === 'cropZoom')      onZoom();
+    if (e.target.id === 'cropRotate')    onRotate();
+    if (e.target.id === 'cropBgColor')   schedulePreview();
+  });
+  document.addEventListener('input', e => {
+    if (e.target.id === 'cropZoom')    onZoom();
+    if (e.target.id === 'cropRotate')  onRotate();
+    if (e.target.id === 'cropBgColor') schedulePreview();
+  });
+
+  document.addEventListener('dragover',  e => { if (e.target.closest('#cropDropZone')) { e.preventDefault(); e.target.closest('#cropDropZone').classList.add('drag-over'); } });
+  document.addEventListener('dragleave', e => { if (e.target.closest('#cropDropZone')) e.target.closest('#cropDropZone').classList.remove('drag-over'); });
+  document.addEventListener('drop', e => {
+    if (e.target.closest('#cropDropZone')) {
+      e.preventDefault(); e.target.closest('#cropDropZone').classList.remove('drag-over');
+      loadFile(e.dataTransfer.files[0]);
+    }
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && $('cropModalWrap').style.display !== 'none') closeCropModal();
+  });
+})();
 
 loadPlayers();
 </script>
