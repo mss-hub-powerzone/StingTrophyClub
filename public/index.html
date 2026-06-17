@@ -342,8 +342,8 @@ html[data-theme="light"] .crop-modal{background:#fff}
           <thead>
             <tr>
               <th style="width:34px"><input type="checkbox" id="selectAllVisibleHeader" class="rowsel" title="Select visible"></th>
-              <th>Player</th><th>Team</th><th>Status</th><th>Position</th>
-              <th>Birthdate</th><th>School / Club</th><th>Contact</th><th style="text-align:center">#</th>
+              <th>Player</th><th style="text-align:center">#</th><th>Team</th><th>Status</th><th>Position</th>
+              <th>Birthdate</th><th>School / Club</th><th>Contact</th>
             </tr>
           </thead>
           <tbody id="tbody"></tbody>
@@ -627,13 +627,14 @@ function table(rows) {
     <tr data-id="${esc(p.id)}" class="${selectedIds.has(p.id) ? 'is-selected' : ''}">
       <td><input type="checkbox" class="rowsel" data-sel="${esc(p.id)}" ${selectedIds.has(p.id) ? 'checked' : ''}></td>
       <td style="display:flex;gap:10px;align-items:center">${p.photoUrl ? `<img class="hs-thumb" src="${esc(p.photoUrl)}" alt="" data-hs-id="${esc(p.id)}" data-hs-name="${esc(full(p))}" title="Edit headshot">` : `<span class="hs-thumb hs-empty" data-hs-id="${esc(p.id)}" data-hs-name="${esc(full(p))}" title="Add headshot">👤</span>`}<div><strong>${esc(full(p))}</strong><div class="small">${p.playerType === 'prospect' ? 'Potential new player' : 'Current roster/imported'}</div></div></td>
+      <td style="text-align:center;font-weight:700;font-size:16px">${p.kitNumber ? esc(p.kitNumber) : '<span style="color:var(--muted);font-weight:400">—</span>'}</td>
       <td>${esc(p.teamBucket || '')}${p.teamOverride ? ' <span class="manual-team-badge" title="Manual team override — pinned regardless of birthdate">Manual</span>' : ''}</td>
       <td><span class="badge ${statusClass(p.status)}">${esc(p.status || '')}</span></td>
       <td>${esc(p.position || '—')}</td>
       <td>${esc(fmt(p.birthdate))}</td>
       <td>${esc(p.school || '—')}<div class="small">${esc(p.club || '')}</div></td>
       <td>${esc(p.contact1Name || '—')}<div class="small">${esc(p.contact1Phone || '')}</div>${contactSummary(p) ? `<div class="small" title="Email / phone fields on file">${contactSummary(p)}</div>` : ''}</td>
-      <td style="text-align:center;font-weight:700;font-size:15px">${p.kitNumber ? esc(p.kitNumber) : '<span style="color:var(--muted)">—</span>'}</td>
+
     </tr>`).join('');
   document.querySelectorAll('#tbody tr').forEach(tr => {
     tr.addEventListener('click', e => {
