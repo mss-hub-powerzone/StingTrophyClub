@@ -86,7 +86,7 @@ async function getPlayer(env, id) {
 // "no such column" error we strip these and retry, so the rest of the
 // fields still save and the operator gets a clear warning instead of a
 // bare 500.
-const POST_INIT_COLUMNS = ["team_override", "photo_url"];
+const POST_INIT_COLUMNS = ["team_override", "photo_url", "kit_number"];
 
 function isMissingColumnError(err) {
   const msg = String((err && err.message) || err || "").toLowerCase();
