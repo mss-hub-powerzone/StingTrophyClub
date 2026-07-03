@@ -16,9 +16,3 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           command: deploy src/worker.js --name stingtrophyclub
-
-      - name: Apply U17 kit numbers
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: d1 execute stingtrophyclub --remote --file migrations/0006_u17_kit_numbers.sql
