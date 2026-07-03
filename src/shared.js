@@ -32,6 +32,7 @@ export const COLUMNS = [
   ["team_override",   "teamOverride"],
   ["photo_url",       "photoUrl"],
   ["kit_number",      "kitNumber"],
+  ["bio",             "bio"],
 ];
 
 const BOOL_FIELDS = new Set(["follow_up"]);
