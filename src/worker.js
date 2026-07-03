@@ -342,171 +342,62 @@ function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&
 
 // ---------------------------------------------------------------------------
 // Match Day Program  GET /program
-// Renders a print-optimised HTML page with cover + team roster pages.
-// 6 players per page (2 col × 3 row). No auth required.
+// One page per team. 3-col grid, up to 12 players per page. No cover page.
 // ---------------------------------------------------------------------------
 async function handleProgram(request, env) {
   const { results } = await env.DB.prepare(
-    "SELECT * FROM players WHERE status != 'Declined' ORDER BY team_override IS NULL, birthdate, last_name"
+    "SELECT * FROM players WHERE status != 'Declined' ORDER BY CAST(kit_number AS INTEGER), last_name"
   ).all();
   const players = results.map(rowToPlayer);
   const u17 = players.filter(p => (p.teamOverride || p.teamBucket) === 'U17');
   const u16 = players.filter(p => (p.teamOverride || p.teamBucket) === 'U16');
   const baseUrl = new URL(request.url).origin;
-
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Sting Soccer • Match Day Program</title>
-<style>
+  const today = new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  const css = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:'Inter',sans-serif;background:#fff;color:#111;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-
-  /* ---- Cover page ---- */
-  .cover{width:100%;min-height:100vh;background:linear-gradient(160deg,#0d1f26 0%,#162e38 50%,#0a2a1a 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;padding:48px 32px;page-break-after:always}
-  .cover-logo{width:140px;height:140px;object-fit:contain;filter:drop-shadow(0 4px 24px rgba(103,183,201,.4))}
-  .cover-title{font-size:48px;font-weight:900;color:#fff;text-align:center;line-height:1.1;letter-spacing:-1px}
-  .cover-title span{color:#67b7c9}
-  .cover-sub{font-size:20px;color:#9ab;text-align:center}
-  .cover-date{font-size:16px;color:#67b7c9;font-weight:600;letter-spacing:1px;text-transform:uppercase}
-  .cover-teams{display:flex;gap:32px;flex-wrap:wrap;justify-content:center;margin-top:8px}
-  .cover-team-pill{background:rgba(103,183,201,.12);border:1px solid rgba(103,183,201,.3);border-radius:40px;padding:10px 22px;display:flex;align-items:center;gap:10px}
-  .cover-team-pill img{width:32px;height:32px;object-fit:contain}
-  .cover-team-pill span{color:#e8e0d0;font-size:14px;font-weight:600}
-  .cover-footer{font-size:13px;color:#556;text-align:center;margin-top:auto}
-
-  /* ---- Team divider page ---- */
-  .team-divider{width:100%;min-height:50vh;background:linear-gradient(135deg,#0d1f26,#162e38);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:48px 32px;page-break-before:always;page-break-after:always}
-  .team-divider img.league-logo{width:80px;height:80px;object-fit:contain;opacity:.9}
-  .team-divider h2{font-size:36px;font-weight:900;color:#fff;text-align:center}
-  .team-divider .coach-line{font-size:16px;color:#9ab;text-align:center}
-  .team-divider .coach-line strong{color:#67b7c9}
-
-  /* ---- Roster page ---- */
-  .roster-page{padding:24px 28px;page-break-before:always}
-  .roster-header{display:flex;align-items:center;gap:14px;margin-bottom:20px;padding-bottom:14px;border-bottom:2px solid #e8e0d0}
-  .roster-header img.sting{width:44px;height:44px;object-fit:contain}
-  .roster-header .rh-text h3{font-size:18px;font-weight:800;color:#0d1f26}
-  .roster-header .rh-text p{font-size:12px;color:#667;margin-top:2px}
-  .roster-header .page-num{margin-left:auto;font-size:12px;color:#aaa;font-weight:600}
-
-  /* ---- Player grid ---- */
-  .player-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-  .player-card{display:flex;gap:14px;align-items:flex-start;background:#f8f6f2;border-radius:14px;padding:14px;border:1px solid #e8e0d0;page-break-inside:avoid}
-  .player-card .photo-wrap{flex-shrink:0;width:88px;height:88px;border-radius:10px;overflow:hidden;background:#d8d0c8;display:flex;align-items:center;justify-content:center}
-  .player-card .photo-wrap img{width:100%;height:100%;object-fit:cover}
-  .player-card .photo-wrap .ph{font-size:36px;opacity:.4}
-  .player-card .info{flex:1;min-width:0}
-  .player-card .kit-num{font-size:28px;font-weight:900;color:#0d1f26;line-height:1;margin-bottom:2px}
-  .player-card .pname{font-size:14px;font-weight:800;color:#0d1f26;line-height:1.2}
-  .player-card .pos-age{font-size:11px;color:#667;font-weight:600;margin-top:3px;text-transform:uppercase;letter-spacing:.4px}
-  .player-card .bio{font-size:11px;color:#444;margin-top:6px;line-height:1.5;font-style:italic}
-  .player-card .bio-empty{font-size:10px;color:#bbb;margin-top:6px;font-style:italic}
-
-  /* ---- Print rules ---- */
-  @media print {
-    @page{margin:12mm 10mm}
-    .cover{min-height:auto;height:calc(100vh - 24mm)}
-    .no-print{display:none}
-    a{color:inherit;text-decoration:none}
-  }
-  @media screen {
-    body{max-width:860px;margin:0 auto;padding:16px}
-    .cover{border-radius:18px;min-height:auto;padding:64px 48px;margin-bottom:32px}
-    .team-divider{border-radius:18px;margin-bottom:32px}
-    .roster-page{border:1px solid #e8e0d0;border-radius:18px;margin-bottom:32px}
-    .print-btn{position:fixed;bottom:24px;right:24px;background:#0d1f26;color:#67b7c9;border:none;border-radius:40px;padding:14px 28px;font-size:15px;font-weight:700;cursor:pointer;box-shadow:0 4px 24px rgba(0,0,0,.3);z-index:99;font-family:inherit}
-    .print-btn:hover{background:#162e38}
-    .back-btn{display:inline-block;margin-bottom:16px;color:#0d1f26;font-size:14px;font-weight:600;text-decoration:none;padding:8px 16px;border:1px solid #ddd;border-radius:8px}
-  }
-</style>
-</head>
-<body>
-
-<a href="/" class="back-btn no-print">← Back to Dashboard</a>
+  .team-page{padding:12px 14px;page-break-after:always}
+  .team-page:last-child{page-break-after:auto}
+  .th{display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,#0d1f26,#162e38);border-radius:12px;padding:11px 16px;margin-bottom:10px}
+  .th .sl{width:42px;height:42px;object-fit:contain;flex-shrink:0}
+  .th .ll{width:34px;height:34px;object-fit:contain;flex-shrink:0;opacity:.9}
+  .th .hi{flex:1}
+  .th .hi h2{font-size:19px;font-weight:900;color:#fff;line-height:1}
+  .th .hi p{font-size:11px;color:#9ab;margin-top:3px}
+  .th .hd{font-size:10px;color:#67b7c9;font-weight:600;text-align:right;white-space:nowrap}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+  .pc{display:flex;gap:8px;align-items:flex-start;background:#f7f5f1;border-radius:9px;padding:8px;border:1px solid #e4dfd6;page-break-inside:avoid}
+  .pw{flex-shrink:0;width:64px;height:64px;border-radius:7px;overflow:hidden;background:#ddd8d0;display:flex;align-items:center;justify-content:center}
+  .pw img{width:100%;height:100%;object-fit:cover}
+  .pw .ph{font-size:26px;opacity:.35}
+  .inf{flex:1;min-width:0}
+  .kn{font-size:23px;font-weight:900;color:#0d1f26;line-height:1}
+  .nm{font-size:11.5px;font-weight:800;color:#0d1f26;line-height:1.2;margin-top:1px}
+  .pa{font-size:9.5px;color:#778;font-weight:600;margin-top:2px;text-transform:uppercase;letter-spacing:.3px}
+  .bio{font-size:9.5px;color:#444;margin-top:3px;line-height:1.45;font-style:italic;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .be{font-size:9px;color:#ccc;margin-top:3px;font-style:italic}
+  @media print{@page{size:letter;margin:7mm}.no-print{display:none}}
+  @media screen{body{max-width:900px;margin:0 auto;padding:16px}.team-page{border:1px solid #e0dbd4;border-radius:14px;margin-bottom:20px}.print-btn{position:fixed;bottom:20px;right:20px;background:#0d1f26;color:#67b7c9;border:none;border-radius:40px;padding:11px 22px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 20px rgba(0,0,0,.25);z-index:99;font-family:inherit}.back-btn{display:inline-block;margin-bottom:12px;color:#333;font-size:13px;font-weight:600;text-decoration:none;padding:6px 14px;border:1px solid #ddd;border-radius:8px}}`;
+  const body = `<a href="/" class="back-btn no-print">&larr; Dashboard</a>
 <button class="print-btn no-print" onclick="window.print()">Print / Save PDF</button>
-
-<!-- COVER -->
-<div class="cover">
-  <img class="cover-logo" src="${baseUrl}/assets/Sting-Logo.jpg" alt="Sting Soccer">
-  <div class="cover-title">Match Day<br><span>Program</span></div>
-  <div class="cover-sub">Sting Soccer • Trophy Club</div>
-  <div class="cover-date">${new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</div>
-  <div class="cover-teams">
-    <div class="cover-team-pill">
-      <img src="${baseUrl}/assets/N1-league-logo.jpg" alt="N1">
-      <span>U17 Boys • N1<br><small style="font-weight:400;color:#9ab">Coach Jon Barber</small></span>
-    </div>
-    <div class="cover-team-pill">
-      <img src="${baseUrl}/assets/ECNL-RL-boys.jpg" alt="ECNL RL">
-      <span>U16 Boys • ECNL RL NTX<br><small style="font-weight:400;color:#9ab">Coach Wayne Smith</small></span>
-    </div>
-  </div>
-  <div class="cover-footer">stingtrophyclub.jon-barber.workers.dev</div>
-</div>
-
-${teamSection(u17, 'U17 Boys', 'N1 National League', 'Coach Jon Barber', baseUrl+'/assets/N1-league-logo.jpg', baseUrl)}
-${teamSection(u16, 'U16 Boys', 'ECNL RL NTX', 'Coach Wayne Smith', baseUrl+'/assets/ECNL-RL-boys.jpg', baseUrl)}
-
-</body></html>`;
-
+${teamPage(u17,'U17 Boys','N1 National League','Coach Jon Barber',baseUrl+'/assets/N1-league-logo.jpg',baseUrl,today)}
+${teamPage(u16,'U16 Boys','ECNL RL NTX','Coach Wayne Smith',baseUrl+'/assets/ECNL-RL-boys.jpg',baseUrl,today)}`;
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sting Soccer Match Day Program</title><style>${css}</style></head><body>${body}</body></html>`;
   return new Response(html, { headers: { 'content-type': 'text/html;charset=UTF-8' } });
 }
 
-function teamSection(players, teamName, league, coach, leagueLogo, baseUrl) {
+function teamPage(players, teamName, league, coach, leagueLogo, baseUrl, today) {
   if (!players.length) return '';
-  const chunks = [];
-  for (let i = 0; i < players.length; i += 6) chunks.push(players.slice(i, i + 6));
-  const totalPages = chunks.length;
-
-  const divider = `
-<div class="team-divider">
-  <img class="league-logo" src="${escHtml(leagueLogo)}" alt="">
-  <h2>${escHtml(teamName)}</h2>
-  <div class="coach-line">${escHtml(league)} &nbsp;•&nbsp; <strong>${escHtml(coach)}</strong></div>
-  <div style="margin-top:8px;font-size:13px;color:#556">${players.length} Players</div>
-</div>`;
-
-  const pages = chunks.map((chunk, pageIdx) => `
-<div class="roster-page">
-  <div class="roster-header">
-    <img class="sting" src="${baseUrl}/assets/Sting-Logo.jpg" alt="Sting">
-    <div class="rh-text">
-      <h3>${escHtml(teamName)} • ${escHtml(league)}</h3>
-      <p>${escHtml(coach)}</p>
-    </div>
-    <div class="page-num">${escHtml(teamName)} &nbsp; ${pageIdx + 1} / ${totalPages}</div>
-  </div>
-  <div class="player-grid">
-    ${chunk.map(p => playerCard(p, baseUrl)).join('')}
-  </div>
-</div>`).join('');
-
-  return divider + pages;
+  return `<div class="team-page"><div class="th"><img class="sl" src="${baseUrl}/assets/Sting-Logo.jpg" alt="Sting"><img class="ll" src="${escHtml(leagueLogo)}" alt=""><div class="hi"><h2>${escHtml(teamName)}</h2><p>${escHtml(league)} &bull; ${escHtml(coach)} &bull; ${players.length} Players</p></div><div class="hd">${escHtml(today)}</div></div><div class="grid">${players.map(p => playerCard(p)).join('')}</div></div>`;
 }
 
-function playerCard(p, baseUrl) {
+function playerCard(p) {
   const name = [p.firstName, p.lastName].filter(Boolean).join(' ');
-  const photo = p.photoUrl
-    ? `<img src="${escHtml(p.photoUrl)}" alt="${escHtml(name)}" loading="lazy">`
-    : `<div class="ph">👤</div>`;
-  const age = p.teamBucket === 'U17' ? 'U17 Boys' : p.teamBucket === 'U16' ? 'U16 Boys' : '';
-  const bioLine = p.bio
-    ? `<div class="bio">${escHtml(p.bio)}</div>`
-    : `<div class="bio-empty">Bio coming soon</div>`;
-  return `
-  <div class="player-card">
-    <div class="photo-wrap">${photo}</div>
-    <div class="info">
-      <div class="kit-num">${p.kitNumber ? escHtml(p.kitNumber) : '—'}</div>
-      <div class="pname">${escHtml(name)}</div>
-      <div class="pos-age">${escHtml(p.position || 'Position TBD')} &nbsp;•&nbsp; ${escHtml(age)}</div>
-      ${bioLine}
-    </div>
-  </div>`;
+  const photo = p.photoUrl ? `<img src="${escHtml(p.photoUrl)}" alt="${escHtml(name)}" loading="lazy">` : `<div class="ph">&#128100;</div>`;
+  const age = p.teamBucket === 'U17' ? 'U17' : p.teamBucket === 'U16' ? 'U16' : '';
+  const bio = p.bio ? `<div class="bio">${escHtml(p.bio)}</div>` : `<div class="be">Bio coming soon</div>`;
+  return `<div class="pc"><div class="pw">${photo}</div><div class="inf"><div class="kn">${p.kitNumber ? escHtml(p.kitNumber) : '&mdash;'}</div><div class="nm">${escHtml(name)}</div><div class="pa">${escHtml(p.position || 'TBD')} &bull; ${escHtml(age)}</div>${bio}</div></div>`;
 }
 
 async function handleApi(request, env, url) {

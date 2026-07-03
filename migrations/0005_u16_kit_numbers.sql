@@ -1,0 +1,22 @@
+-- Migration 0005: U16 kit numbers from roster screenshots (July 2026)
+UPDATE players SET kit_number='77'  WHERE id='alonzo-delhierro-2010-12-08';
+UPDATE players SET kit_number='1'   WHERE id='beckett-jones-2011-03-17';
+UPDATE players SET kit_number='19'  WHERE id='caleb-kang-2010-09-24';
+UPDATE players SET kit_number='15'  WHERE id='connor-ausdenmoore-2011-03-05';
+UPDATE players SET kit_number='23'  WHERE id='david-sebastian-2011-05-12';
+UPDATE players SET kit_number='13'  WHERE id='dustin-hebb-2011-07-05';
+UPDATE players SET kit_number='21'  WHERE id='emmanuel-moreno-2010-11-23';
+UPDATE players SET kit_number='9'   WHERE id='gavin-miller-2011-03-19';
+UPDATE players SET kit_number='5'   WHERE id='gavin-williams-2011-02-14';
+UPDATE players SET kit_number='79'  WHERE id='hugoisaac-rodriguez-2011-01-25';
+UPDATE players SET kit_number='25'  WHERE id='ian-maltchev-2011-03-07';
+UPDATE players SET kit_number='11'  WHERE id='jaxon-petersen-2011-08-12';
+UPDATE players SET kit_number='33'  WHERE id='laken-hembree-2010-09-21';
+UPDATE players SET kit_number='47'  WHERE id='liam-hooper-2011-07-07';
+UPDATE players SET kit_number='7'   WHERE id='logan-cano-2011-04-05';
+UPDATE players SET kit_number='00'  WHERE id='lyndon-caton-2010-09-13';
+UPDATE players SET kit_number='99'  WHERE id='maximiliano-zavala-2011-06-16';
+UPDATE players SET kit_number='3'   WHERE id='mehul-venny-2010-11-26';
+UPDATE players SET kit_number='29'  WHERE id='patricio-santibanez-2011-01-12';
+UPDATE players SET kit_number='17'  WHERE id='reed-petty-2010-08-05';
+UPDATE players SET kit_number='67'  WHERE id='santiago-grimaldo-2011-04-14';
