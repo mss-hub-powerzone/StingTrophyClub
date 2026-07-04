@@ -16,10 +16,3 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           command: deploy src/worker.js --name stingtrophyclub
-
-      - name: Add shirt_size column (0007)
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: d1 execute stingtrophyclub --remote --file migrations/0007_add_shirt_size.sql
-        continue-on-error: true
