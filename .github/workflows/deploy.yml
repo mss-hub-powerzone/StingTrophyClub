@@ -25,13 +25,6 @@ jobs:
           command: d1 execute stingtrophyclub --remote --command "ALTER TABLE players ADD COLUMN bio TEXT NOT NULL DEFAULT ''"
         continue-on-error: true
 
-      - name: Decline duplicate Gunnar Hansen
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: d1 execute stingtrophyclub --remote --command "UPDATE players SET status = 'Declined' WHERE id = 'gunnar-hansen-2011-10-31'"
-        continue-on-error: true
-
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
