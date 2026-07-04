@@ -25,11 +25,11 @@ jobs:
           command: d1 execute stingtrophyclub --remote --command "ALTER TABLE players ADD COLUMN bio TEXT NOT NULL DEFAULT ''"
         continue-on-error: true
 
-      - name: Update U16 missing shirt sizes
+      - name: Update 5 U17 missing shirt sizes to AM
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: d1 execute stingtrophyclub --remote --command "UPDATE players SET shirt_size='AM' WHERE id IN ('alonzo-delhierro-2010-12-08','dustin-hebb-2011-07-05','liam-hooper-2011-07-07','beckett-jones-2011-03-17','caleb-kang-2010-09-24','emmanuel-moreno-2010-11-23','hugoisaac-rodriguez-2011-01-25','david-sebastian-2011-05-12','mehul-venny-2010-11-26'); UPDATE players SET shirt_size='AL' WHERE id='gavin-williams-2011-02-14'"
+          command: d1 execute stingtrophyclub --remote --command "UPDATE players SET shirt_size='AM' WHERE id IN ('lucas-armbruster-2010-05-08','ryder-mathine-2010-07-22','hunter-graves-2010-05-03','luke-crawford-2010-08-05','keaton-lucero-39')"
         continue-on-error: true
 
       - name: Deploy to Cloudflare Workers
