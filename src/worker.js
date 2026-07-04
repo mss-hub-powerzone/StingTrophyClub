@@ -299,66 +299,266 @@ async function handleBioPage(request, env, id) {
     const form = await request.formData().catch(() => null);
     const bio = form ? String(form.get('bio') || '').slice(0, 280).trim() : '';
     const shirtSize = form ? String(form.get('shirt_size') || '').trim() : '';
+    const kitNumber = form ? String(form.get('kit_number') || '').slice(0, 4).trim() : '';
     const allowed = ['YS','YM','YL','YXL','AS','AM','AL','AXL','A2XL','A3XL',''];
     const safeSize = allowed.includes(shirtSize) ? shirtSize : '';
-    await env.DB.prepare("UPDATE players SET bio = ?, shirt_size = ?, updated_at = datetime('now') WHERE id = ?")
-      .bind(bio, safeSize, id).run();
-    return new Response(bioPageHtml(name, bio, safeSize, true), { headers: { 'content-type': 'text/html;charset=UTF-8' } });
+    const safeKit = /^[0-9]{0,4}$/.test(kitNumber) ? kitNumber : '';
+    await env.DB.prepare("UPDATE players SET bio = ?, shirt_size = ?, kit_number = CASE WHEN ? != '' THEN ? ELSE kit_number END, updated_at = datetime('now') WHERE id = ?")
+      .bind(bio, safeSize, safeKit, safeKit, id).run();
+    return new Response(bioPageHtml(name, p.photoUrl || '', bio, safeSize, safeKit || p.kitNumber || '', true), { headers: { 'content-type': 'text/html;charset=UTF-8' } });
   }
 
-  return new Response(bioPageHtml(name, p.bio || '', p.shirtSize || '', false), { headers: { 'content-type': 'text/html;charset=UTF-8' } });
+  return new Response(bioPageHtml(name, p.photoUrl || '', p.bio || '', p.shirtSize || '', p.kitNumber || '', false), { headers: { 'content-type': 'text/html;charset=UTF-8' } });
 }
 
-function bioPageHtml(name, currentBio, currentSize, saved) {
+function bioPageHtml(name, photoUrl, currentBio, currentSize, currentKit, saved) {
+  const hasPhoto = !!(photoUrl && photoUrl.trim());
+  const photoSrc = hasPhoto ? escHtml(photoUrl) : '';
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Player Bio — ${escHtml(name)}</title>
+<title>Player Profile — ${escHtml(name)}</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d1f26;color:#e8e0d0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
-  .card{background:#162830;border:1px solid #2a4a55;border-radius:18px;padding:32px;width:min(480px,100%);display:flex;flex-direction:column;gap:20px}
-  h1{font-size:22px;color:#67b7c9}
-  p{font-size:14px;color:#9ab;line-height:1.6}
-  textarea{width:100%;background:#0d1f26;border:1px solid #2a4a55;border-radius:10px;color:#e8e0d0;font-size:15px;padding:12px;resize:vertical;min-height:100px;font-family:inherit}
-  textarea:focus{outline:none;border-color:#67b7c9}
-  .counter{font-size:12px;color:#9ab;text-align:right;margin-top:4px}
-  button{background:#67b7c9;color:#0d1f26;border:none;border-radius:10px;padding:12px 28px;font-size:15px;font-weight:700;cursor:pointer;align-self:flex-start}
-  button:hover{background:#89ccd9}
-  .saved{background:#1a3a2a;border:1px solid #2a6a4a;border-radius:10px;padding:14px;color:#67c98a;font-size:14px}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d1f26;color:#e8e0d0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+  .card{background:#162830;border:1px solid #2a4a55;border-radius:18px;padding:28px;width:min(480px,100%);display:flex;flex-direction:column;gap:18px}
+  h1{font-size:21px;color:#67b7c9;line-height:1.2}
+  .sub{font-size:13px;color:#9ab;line-height:1.5}
+  label.lbl{font-size:12px;color:#9ab;font-weight:600;margin-bottom:4px;display:block;text-transform:uppercase;letter-spacing:.4px}
+  textarea{width:100%;background:#0d1f26;border:1px solid #2a4a55;border-radius:10px;color:#e8e0d0;font-size:15px;padding:12px;resize:vertical;min-height:90px;font-family:inherit}
+  textarea:focus,select:focus,input:focus{outline:none;border-color:#67b7c9}
+  select,input[type=text]{width:100%;background:#0d1f26;border:1px solid #2a4a55;border-radius:10px;color:#e8e0d0;font-size:15px;padding:11px 12px;appearance:none;-webkit-appearance:none;font-family:inherit}
+  .counter{font-size:12px;color:#9ab;text-align:right;margin-top:3px}
+  .btn{background:#67b7c9;color:#0d1f26;border:none;border-radius:10px;padding:13px 28px;font-size:15px;font-weight:700;cursor:pointer;width:100%}
+  .btn:hover{background:#89ccd9}
+  .saved{background:#1a3a2a;border:1px solid #2a6a4a;border-radius:10px;padding:13px;color:#67c98a;font-size:14px}
   .logo{display:flex;align-items:center;gap:12px}
-  .logo img{width:44px;height:44px;object-fit:contain}
-  .logo span{font-size:13px;color:#9ab}
+  .logo img.logo-img{width:40px;height:40px;object-fit:contain}
+  .logo span{font-size:12px;color:#9ab}
+  .photo-wrap{display:flex;align-items:center;gap:16px}
+  .photo-wrap img{width:72px;height:72px;border-radius:50%;object-fit:cover;border:2px solid #2a4a55;background:#0d1f26}
+  .photo-placeholder{width:72px;height:72px;border-radius:50%;background:#0d1f26;border:2px dashed #2a4a55;display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0}
+  .photo-meta{flex:1}
+  .photo-meta p{font-size:12px;color:#9ab;margin-top:4px}
+  .upload-btn{background:transparent;border:1px solid #2a4a55;border-radius:8px;color:#9ab;padding:7px 14px;font-size:13px;cursor:pointer;font-family:inherit}
+  .upload-btn:hover{border-color:#67b7c9;color:#67b7c9}
+  #upload-status{font-size:12px;margin-top:6px;color:#9ab;min-height:16px}
+  .divider{border:none;border-top:1px solid #2a4a55}
+  .field{display:flex;flex-direction:column;gap:4px}
 </style></head><body>
 <div class="card">
-  <div class="logo"><img src="/assets/Sting-Logo.jpg" alt="Sting"><span>Sting Soccer • Trophy Club</span></div>
-  <h1>Hey ${escHtml(name)}!</h1>
-  <p>Share a little about yourself for the match day program. Hometown, your club background, favorite position, a fun fact — keep it to 2-3 sentences.</p>
-  ${saved ? '<div class="saved">✓ Saved! Thanks — your info will appear in the match day program.</div>' : ''}
-  <form method="POST">
-    <label style="font-size:13px;color:#9ab;font-weight:600;margin-bottom:4px;display:block">Shirt size</label>
-    <select name="shirt_size" style="width:100%;background:#0d1f26;border:1px solid #2a4a55;border-radius:10px;color:#e8e0d0;font-size:15px;padding:11px 12px;margin-bottom:4px;appearance:none;-webkit-appearance:none;cursor:pointer">
-      <option value="">— Select size —</option>
-      <optgroup label="Youth">
-        <option value="YS" ${currentSize==='YS'?'selected':''}>Youth S</option>
-        <option value="YM" ${currentSize==='YM'?'selected':''}>Youth M</option>
-        <option value="YL" ${currentSize==='YL'?'selected':''}>Youth L</option>
-        <option value="YXL" ${currentSize==='YXL'?'selected':''}>Youth XL</option>
-      </optgroup>
-      <optgroup label="Adult">
-        <option value="AS" ${currentSize==='AS'?'selected':''}>Adult S</option>
-        <option value="AM" ${currentSize==='AM'?'selected':''}>Adult M</option>
-        <option value="AL" ${currentSize==='AL'?'selected':''}>Adult L</option>
-        <option value="AXL" ${currentSize==='AXL'?'selected':''}>Adult XL</option>
-        <option value="A2XL" ${currentSize==='A2XL'?'selected':''}>Adult 2XL</option>
-        <option value="A3XL" ${currentSize==='A3XL'?'selected':''}>Adult 3XL</option>
-      </optgroup>
-    </select>
-    <label style="font-size:13px;color:#9ab;font-weight:600;margin:12px 0 4px;display:block">Player bio</label>
-    <textarea name="bio" maxlength="280" oninput="document.getElementById('ct').textContent=280-this.value.length+' left'" placeholder="e.g. I'm from Southlake, TX and have played with Sting since U10. I play center mid and love to set up goals for my teammates.">${escHtml(currentBio)}</textarea>
-    <div class="counter"><span id="ct">${280 - currentBio.length} left</span></div>
-    <button type="submit">Save my info</button>
+  <div class="logo"><img class="logo-img" src="/assets/Sting-Logo.jpg" alt="Sting"><span>Sting Soccer • Trophy Club</span></div>
+  <div>
+    <h1>Hey ${escHtml(name)}!</h1>
+    <p class="sub">Fill out what you can — it'll show up in the match day program.</p>
+  </div>
+  ${saved ? '<div class="saved">✓ Saved! Your info has been updated.</div>' : ''}
+
+  <!-- Photo section (JS upload, no page reload) -->
+  <div class="field">
+    <label class="lbl">Profile photo</label>
+    <div class="photo-wrap">
+      ${hasPhoto
+        ? `<img id="photo-preview" src="${photoSrc}" alt="photo">`
+        : `<div class="photo-placeholder" id="photo-placeholder">📷</div>`}
+      <div class="photo-meta">
+        <button type="button" class="upload-btn" onclick="document.getElementById('photo-file').click()">
+          ${hasPhoto ? 'Replace photo' : 'Upload photo'}
+        </button>
+        <p>Shoulders &amp; above • square works best</p>
+        <div id="upload-status"></div>
+      </div>
+    </div>
+    <input type="file" id="photo-file" accept="image/*" style="display:none" onchange="uploadPhoto(this)">
+  </div>
+
+  <hr class="divider">
+
+  <!-- Text fields form -->
+  <form method="POST" id="info-form">
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div class="field">
+        <label class="lbl" for="kit_input">Kit # (jersey number)</label>
+        <input type="text" id="kit_input" name="kit_number" maxlength="4" inputmode="numeric" pattern="[0-9]*" placeholder="e.g. 10" value="${escHtml(currentKit)}">
+      </div>
+      <div class="field">
+        <label class="lbl" for="size_select">Shirt size</label>
+        <select id="size_select" name="shirt_size">
+          <option value="">— Select size —</option>
+          <optgroup label="Youth">
+            <option value="YS" ${currentSize==='YS'?'selected':''}>Youth S</option>
+            <option value="YM" ${currentSize==='YM'?'selected':''}>Youth M</option>
+            <option value="YL" ${currentSize==='YL'?'selected':''}>Youth L</option>
+            <option value="YXL" ${currentSize==='YXL'?'selected':''}>Youth XL</option>
+          </optgroup>
+          <optgroup label="Adult">
+            <option value="AS" ${currentSize==='AS'?'selected':''}>Adult S</option>
+            <option value="AM" ${currentSize==='AM'?'selected':''}>Adult M</option>
+            <option value="AL" ${currentSize==='AL'?'selected':''}>Adult L</option>
+            <option value="AXL" ${currentSize==='AXL'?'selected':''}>Adult XL</option>
+            <option value="A2XL" ${currentSize==='A2XL'?'selected':''}>Adult 2XL</option>
+            <option value="A3XL" ${currentSize==='A3XL'?'selected':''}>Adult 3XL</option>
+          </optgroup>
+        </select>
+      </div>
+      <div class="field">
+        <label class="lbl" for="bio_input">Player bio</label>
+        <textarea id="bio_input" name="bio" maxlength="280" oninput="document.getElementById('ct').textContent=280-this.value.length+' left'" placeholder="e.g. I'm from Southlake TX, have played with Sting since U10. I play center mid and love to set up goals.">${escHtml(currentBio)}</textarea>
+        <div class="counter"><span id="ct">${280 - currentBio.length} left</span></div>
+      </div>
+      <button type="submit" class="btn">Save my info</button>
+    </div>
   </form>
-</div></body></html>`;
+</div>
+<script>
+const PLAYER_ID = ${JSON.stringify(name)};
+async function uploadPhoto(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const status = document.getElementById('upload-status');
+  status.textContent = 'Uploading…';
+  // Derive player ID from current URL path: /bio/<id>
+  const pathId = location.pathname.replace(/^\\/bio\\//, '').replace(/\\/$/, '');
+  try {
+    const res = await fetch('/api/players/' + encodeURIComponent(pathId) + '/photo', {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type || 'image/jpeg' },
+      body: file
+    });
+    if (!res.ok) throw new Error('Upload failed (' + res.status + ')');
+    const data = await res.json();
+    status.textContent = '✓ Photo uploaded!';
+    status.style.color = '#67c98a';
+    // Swap in the new photo
+    const url = data.photoUrl || data.photo_url || '';
+    if (url) {
+      const preview = document.getElementById('photo-preview');
+      const placeholder = document.getElementById('photo-placeholder');
+      if (preview) {
+        preview.src = url;
+      } else if (placeholder) {
+        const img = document.createElement('img');
+        img.id = 'photo-preview';
+        img.src = url;
+        img.alt = 'photo';
+        img.style.cssText = 'width:72px;height:72px;border-radius:50%;object-fit:cover;border:2px solid #2a4a55';
+        placeholder.replaceWith(img);
+      }
+    }
+  } catch(e) {
+    status.textContent = '✗ ' + e.message;
+    status.style.color = '#e79ac2';
+  }
+  input.value = '';
 }
+</script>
+</body></html>`;
+}
+
+// ---------------------------------------------------------------------------
+// Player self-serve lookup  GET /update
+// Public page — lists all active players so they can find themselves and tap
+// through to their /bio/:id self-serve form.
+// ---------------------------------------------------------------------------
+async function handleUpdateLookup(env) {
+  const { results } = await env.DB.prepare(
+    "SELECT id, first_name, last_name, team_bucket, team_label, team_override, photo_url, kit_number, bio, shirt_size FROM players WHERE status != 'Declined' ORDER BY last_name, first_name"
+  ).all();
+
+  const players = (results || []).map(r => ({
+    id: r.id,
+    name: [r.first_name, r.last_name].filter(Boolean).join(' '),
+    team: r.team_override || r.team_bucket || '',
+    teamLabel: r.team_label || r.team_override || r.team_bucket || '',
+    hasPhoto: !!(r.photo_url && r.photo_url.trim()),
+    hasBio: !!(r.bio && r.bio.trim()),
+    hasSize: !!(r.shirt_size && r.shirt_size.trim()),
+    kit: r.kit_number || '',
+  }));
+
+  const u17 = players.filter(p => p.team === 'U17');
+  const u16 = players.filter(p => p.team === 'U16');
+  const other = players.filter(p => p.team !== 'U17' && p.team !== 'U16');
+
+  function renderGroup(label, group) {
+    if (!group.length) return '';
+    const rows = group.map(p => {
+      const done = [p.hasPhoto, p.hasBio, p.hasSize].filter(Boolean).length;
+      const pct = Math.round(done / 3 * 100);
+      const badge = pct === 100 ? '✓' : pct >= 67 ? '⬤⬤○' : pct >= 33 ? '⬤○○' : '○○○';
+      const color = pct === 100 ? '#67c98a' : pct >= 67 ? '#67b7c9' : '#9ab';
+      return `<a class="player-row" href="/bio/${encodeURIComponent(p.id)}">
+        <span class="pname">${escHtml(p.name)}</span>
+        <span class="pstatus" style="color:${color}">${badge}</span>
+      </a>`;
+    }).join('');
+    return `<div class="group"><div class="group-label">${escHtml(label)}</div>${rows}</div>`;
+  }
+
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Player Info Update — Sting Soccer</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d1f26;color:#e8e0d0;min-height:100vh;padding:24px 16px}
+  .page{max-width:480px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+  .logo{display:flex;align-items:center;gap:12px}
+  .logo img{width:44px;height:44px;object-fit:contain}
+  .logo-text h2{font-size:16px;font-weight:800;color:#e8e0d0;line-height:1}
+  .logo-text p{font-size:12px;color:#9ab;margin-top:2px}
+  .intro{font-size:14px;color:#9ab;line-height:1.6}
+  .search-wrap{position:relative}
+  #search{width:100%;background:#162830;border:1px solid #2a4a55;border-radius:12px;color:#e8e0d0;font-size:16px;padding:13px 16px;font-family:inherit}
+  #search:focus{outline:none;border-color:#67b7c9}
+  .group{background:#162830;border:1px solid #2a4a55;border-radius:14px;overflow:hidden}
+  .group-label{font-size:11px;font-weight:700;color:#67b7c9;text-transform:uppercase;letter-spacing:.7px;padding:10px 16px;border-bottom:1px solid #2a4a55;background:#0d1f26}
+  .player-row{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid #1a3040;text-decoration:none;color:#e8e0d0;transition:background .15s}
+  .player-row:last-child{border-bottom:none}
+  .player-row:hover,.player-row:active{background:#1e3844}
+  .pname{font-size:15px;font-weight:600}
+  .pstatus{font-size:13px;letter-spacing:1px}
+  .legend{font-size:11px;color:#9ab;text-align:center;line-height:1.8}
+  #no-results{display:none;text-align:center;font-size:14px;color:#9ab;padding:20px}
+</style></head><body>
+<div class="page">
+  <div class="logo">
+    <img src="/assets/Sting-Logo.jpg" alt="Sting">
+    <div class="logo-text"><h2>Sting Soccer</h2><p>Trophy Club</p></div>
+  </div>
+  <p class="intro">Find your name below and tap it to update your photo, jersey number, shirt size, and bio for the match day program.</p>
+  <div class="search-wrap">
+    <input type="search" id="search" placeholder="Search your name…" autocomplete="off" autocorrect="off" spellcheck="false">
+  </div>
+  <div id="player-list">
+    ${renderGroup('U17 Boys — N1 National', u17)}
+    ${renderGroup('U16 Boys — ECNL RL', u16)}
+    ${renderGroup('Other', other)}
+  </div>
+  <p id="no-results">No players found.</p>
+  <p class="legend">✓ = all info complete &nbsp;|&nbsp; ⬤ = some info filled &nbsp;|&nbsp; ○ = not started</p>
+</div>
+<script>
+const search = document.getElementById('search');
+const list = document.getElementById('player-list');
+const noResults = document.getElementById('no-results');
+search.addEventListener('input', () => {
+  const q = search.value.toLowerCase().trim();
+  let any = false;
+  list.querySelectorAll('.player-row').forEach(row => {
+    const match = !q || row.querySelector('.pname').textContent.toLowerCase().includes(q);
+    row.style.display = match ? '' : 'none';
+    if (match) any = true;
+  });
+  list.querySelectorAll('.group').forEach(g => {
+    const vis = [...g.querySelectorAll('.player-row')].some(r => r.style.display !== 'none');
+    g.style.display = vis ? '' : 'none';
+  });
+  noResults.style.display = any ? 'none' : 'block';
+});
+search.focus();
+</script>
+</body></html>`;
+
+  return new Response(html, { headers: { 'content-type': 'text/html;charset=UTF-8' } });
+}
+
 
 function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
@@ -485,6 +685,10 @@ export default {
     // Match day program page: GET /program
     if (url.pathname === '/program' || url.pathname === '/program/') {
       return handleProgram(request, env);
+    }
+    // Player self-serve lookup: GET /update
+    if (url.pathname === '/update' || url.pathname === '/update/') {
+      return handleUpdateLookup(env);
     }
     if (env.ASSETS) {
       return env.ASSETS.fetch(request);
