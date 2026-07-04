@@ -33,6 +33,7 @@ export const COLUMNS = [
   ["photo_url",       "photoUrl"],
   ["kit_number",      "kitNumber"],
   ["bio",             "bio"],
+  ["shirt_size",      "shirtSize"],
 ];
 
 const BOOL_FIELDS = new Set(["follow_up"]);

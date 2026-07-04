@@ -86,7 +86,7 @@ async function getPlayer(env, id) {
 // "no such column" error we strip these and retry, so the rest of the
 // fields still save and the operator gets a clear warning instead of a
 // bare 500.
-const POST_INIT_COLUMNS = ["team_override", "photo_url", "kit_number", "bio"];
+const POST_INIT_COLUMNS = ["team_override", "photo_url", "kit_number", "bio", "shirt_size"];
 
 function isMissingColumnError(err) {
   const msg = String((err && err.message) || err || "").toLowerCase();
@@ -298,15 +298,18 @@ async function handleBioPage(request, env, id) {
   if (method === 'POST') {
     const form = await request.formData().catch(() => null);
     const bio = form ? String(form.get('bio') || '').slice(0, 280).trim() : '';
-    await env.DB.prepare("UPDATE players SET bio = ?, updated_at = datetime('now') WHERE id = ?")
-      .bind(bio, id).run();
-    return new Response(bioPageHtml(name, bio, true), { headers: { 'content-type': 'text/html;charset=UTF-8' } });
+    const shirtSize = form ? String(form.get('shirt_size') || '').trim() : '';
+    const allowed = ['YS','YM','YL','YXL','AS','AM','AL','AXL','A2XL','A3XL',''];
+    const safeSize = allowed.includes(shirtSize) ? shirtSize : '';
+    await env.DB.prepare("UPDATE players SET bio = ?, shirt_size = ?, updated_at = datetime('now') WHERE id = ?")
+      .bind(bio, safeSize, id).run();
+    return new Response(bioPageHtml(name, bio, safeSize, true), { headers: { 'content-type': 'text/html;charset=UTF-8' } });
   }
 
-  return new Response(bioPageHtml(name, p.bio || '', false), { headers: { 'content-type': 'text/html;charset=UTF-8' } });
+  return new Response(bioPageHtml(name, p.bio || '', p.shirtSize || '', false), { headers: { 'content-type': 'text/html;charset=UTF-8' } });
 }
 
-function bioPageHtml(name, currentBio, saved) {
+function bioPageHtml(name, currentBio, currentSize, saved) {
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Player Bio — ${escHtml(name)}</title>
 <style>
@@ -329,11 +332,30 @@ function bioPageHtml(name, currentBio, saved) {
   <div class="logo"><img src="/assets/Sting-Logo.jpg" alt="Sting"><span>Sting Soccer • Trophy Club</span></div>
   <h1>Hey ${escHtml(name)}!</h1>
   <p>Share a little about yourself for the match day program. Hometown, your club background, favorite position, a fun fact — keep it to 2-3 sentences.</p>
-  ${saved ? '<div class="saved">✓ Bio saved! Thanks — it will appear in the match day program.</div>' : ''}
+  ${saved ? '<div class="saved">✓ Saved! Thanks — your info will appear in the match day program.</div>' : ''}
   <form method="POST">
+    <label style="font-size:13px;color:#9ab;font-weight:600;margin-bottom:4px;display:block">Shirt size</label>
+    <select name="shirt_size" style="width:100%;background:#0d1f26;border:1px solid #2a4a55;border-radius:10px;color:#e8e0d0;font-size:15px;padding:11px 12px;margin-bottom:4px;appearance:none;-webkit-appearance:none;cursor:pointer">
+      <option value="">— Select size —</option>
+      <optgroup label="Youth">
+        <option value="YS" ${currentSize==='YS'?'selected':''}>Youth S</option>
+        <option value="YM" ${currentSize==='YM'?'selected':''}>Youth M</option>
+        <option value="YL" ${currentSize==='YL'?'selected':''}>Youth L</option>
+        <option value="YXL" ${currentSize==='YXL'?'selected':''}>Youth XL</option>
+      </optgroup>
+      <optgroup label="Adult">
+        <option value="AS" ${currentSize==='AS'?'selected':''}>Adult S</option>
+        <option value="AM" ${currentSize==='AM'?'selected':''}>Adult M</option>
+        <option value="AL" ${currentSize==='AL'?'selected':''}>Adult L</option>
+        <option value="AXL" ${currentSize==='AXL'?'selected':''}>Adult XL</option>
+        <option value="A2XL" ${currentSize==='A2XL'?'selected':''}>Adult 2XL</option>
+        <option value="A3XL" ${currentSize==='A3XL'?'selected':''}>Adult 3XL</option>
+      </optgroup>
+    </select>
+    <label style="font-size:13px;color:#9ab;font-weight:600;margin:12px 0 4px;display:block">Player bio</label>
     <textarea name="bio" maxlength="280" oninput="document.getElementById('ct').textContent=280-this.value.length+' left'" placeholder="e.g. I'm from Southlake, TX and have played with Sting since U10. I play center mid and love to set up goals for my teammates.">${escHtml(currentBio)}</textarea>
     <div class="counter"><span id="ct">${280 - currentBio.length} left</span></div>
-    <button type="submit">Save my bio</button>
+    <button type="submit">Save my info</button>
   </form>
 </div></body></html>`;
 }
