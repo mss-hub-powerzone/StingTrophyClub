@@ -25,11 +25,11 @@ jobs:
           command: d1 execute stingtrophyclub --remote --command "ALTER TABLE players ADD COLUMN bio TEXT NOT NULL DEFAULT ''"
         continue-on-error: true
 
-      - name: Update 4 shirt sizes
+      - name: Set kit numbers for Trey and Roberto
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: d1 execute stingtrophyclub --remote --command "UPDATE players SET shirt_size='AM' WHERE id IN ('kellen-keahey-2010-01-19','santiago-grimaldo-2011-04-14'); UPDATE players SET shirt_size='AS' WHERE id IN ('caleb-kang-2010-09-24','beckett-jones-2011-03-17')"
+          command: d1 execute stingtrophyclub --remote --command "UPDATE players SET kit_number='12' WHERE id='trey-maggard-2010-08-12'; UPDATE players SET kit_number='28' WHERE id='roberto-roderomahamud-2010-04-12'"
         continue-on-error: true
 
       - name: Deploy to Cloudflare Workers
