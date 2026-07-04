@@ -460,7 +460,7 @@ async function uploadPhoto(input) {
 // ---------------------------------------------------------------------------
 async function handleUpdateLookup(env) {
   const { results } = await env.DB.prepare(
-    "SELECT id, first_name, last_name, team_bucket, team_label, team_override, photo_url, kit_number, bio, shirt_size FROM players WHERE status != 'Declined' ORDER BY last_name, first_name"
+    "SELECT * FROM players WHERE status != 'Declined' ORDER BY last_name, first_name"
   ).all();
 
   const players = (results || []).map(r => ({
